@@ -33,6 +33,10 @@ Keep `libturbojpeg.dll` beside `Striplight.exe`. The included DLL is the Windows
 - `uFrameDetect.pas`: frame detection.
 - `uIDFParser.pas`, `uQPF.pas`, `uTypes.pas`: file parsing, project data and shared types.
 - `uTurboJPEG.pas`: TurboJPEG runtime interface.
+- `uToneAdjust.pas`, `uToneBitmap.pas`: tone adjustment methods shared by preview and export.
+- `uTurboRaw.pas`, `uFrameGray.pas`: fast grayscale export path and shared strip cache.
+- `tests/striplight_tests.lpr`: command-line checks, tone-method tryout and benchmark.
+- `docs/tone_methods_and_fast_export.md`: the adaptive tone methods and the fast export path.
 - `uStandaloneCacheManager.pas`: cache-manager interface.
 - `unit1.pas` / `.lfm`: preserved original starter form, unused by the current projects.
 - `assets/`: original icon and artwork assets.

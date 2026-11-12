@@ -326,6 +326,7 @@ begin
       Roll.StriplightAdjustContrast := AttrInt(StriplightNode, 'AdjustContrast', Roll.StriplightAdjustContrast);
       Roll.StriplightAdjustBrightness := AttrInt(StriplightNode, 'AdjustBrightness', Roll.StriplightAdjustBrightness);
       Roll.StriplightAdjustGamma := AttrInt(StriplightNode, 'AdjustGamma', Roll.StriplightAdjustGamma);
+      Roll.StriplightAdjustStrength := AttrInt(StriplightNode, 'AdjustStrength', Roll.StriplightAdjustStrength);
       Roll.StriplightSharpness := AttrInt(StriplightNode, 'Sharpness', Roll.StriplightSharpness);
       Roll.StriplightSharpnessMode := AttrInt(StriplightNode, 'SharpnessMode', Roll.StriplightSharpnessMode);
       Roll.StriplightExportNamingMode := AttrInt(StriplightNode, 'ExportNamingMode', Roll.StriplightExportNamingMode);
@@ -392,6 +393,7 @@ begin
       '" AdjustContrast="' + IntToStr(Roll.StriplightAdjustContrast) +
       '" AdjustBrightness="' + IntToStr(Roll.StriplightAdjustBrightness) +
       '" AdjustGamma="' + IntToStr(Roll.StriplightAdjustGamma) +
+      '" AdjustStrength="' + IntToStr(Roll.StriplightAdjustStrength) +
       '" Sharpness="' + IntToStr(Roll.StriplightSharpness) +
       '" SharpnessMode="' + IntToStr(Roll.StriplightSharpnessMode) +
       '" ExportNamingMode="' + IntToStr(Roll.StriplightExportNamingMode) +

@@ -8,7 +8,7 @@ uses
   Classes, SysUtils, Types, Forms, Controls, Graphics, Dialogs,
   ComCtrls, StdCtrls, ExtCtrls, Buttons, Spin, Math, LCLType, Menus, FPWriteJPEG,
   BGRABitmap, BGRABitmapTypes,
-  uTurboJPEG,
+  uTurboJPEG, uTurboRaw, uToneAdjust, uToneBitmap, uFrameGray,
   uTypes, uIDFParser, uStripView, uQPF, uFrameDetect;
 
 const
@@ -50,6 +50,9 @@ type
     GlobalGamma: Integer;
     GlobalSharpness: Integer;
     GlobalSharpnessMode: Integer;
+    GlobalStrength: Integer;        // strength of the adaptive tone methods
+    UseGrayPath: Boolean;           // fast 8-bit path for grayscale strips
+    StripCache: TGrayStripCache;    // decoded strips shared by all workers
   end;
 
   TExportWorkerThread = class(TThread)
@@ -82,9 +85,11 @@ type
       Brightness, Gamma: Integer);
     procedure ApplyNegative(ABitmap: TBGRABitmap);
     procedure ApplyGrayAdjustment(ABitmap: TBGRABitmap; Method, Flags, Contrast,
-      Brightness, Gamma: Integer);
+      Brightness, Gamma: Integer; Negative: Boolean);
     function AdjustmentIsNoOp(Method, Flags, Contrast, Brightness, Gamma: Integer): Boolean;
     function BuildFrameBitmap(FrameIdx: Integer; out ABitmap: TBGRABitmap;
+      out Err: String; out LoadMs, CropMs, AdjustMs: Int64): Boolean;
+    function BuildFrameGray(FrameIdx: Integer; out Frame: TGrayFrame;
       out Err: String; out LoadMs, CropMs, AdjustMs: Int64): Boolean;
     procedure SaveJpeg(ABitmap: TBGRABitmap; const Path: String);
     procedure SaveJpegStaged(ABitmap: TBGRABitmap; const Path: String);
@@ -301,6 +306,8 @@ type
     FSpinGamma           : TSpinEdit;
     FTrackSharpness      : TTrackBar;
     FSpinSharpness       : TSpinEdit;
+    FTrackStrength       : TTrackBar;
+    FSpinStrength        : TSpinEdit;
     FComboSharpnessMode  : TComboBox;
     FBtnAutoAdjustSelected: TBitBtn;
     FChkAdjustPreview    : TCheckBox;
@@ -583,6 +590,7 @@ type
     procedure OnAdjustPreviewToggle(Sender: TObject);
     procedure OnSharpnessChanged(Sender: TObject);
     procedure OnSharpnessModeChanged(Sender: TObject);
+    procedure OnStrengthChanged(Sender: TObject);
     procedure OnAutoAdjustSelected(Sender: TObject);
     procedure OnVisualSliderMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Integer);
@@ -667,6 +675,7 @@ type
       Brightness, Gamma: Integer): Boolean;
     procedure AutoAdjustSelectedFrames;
     function  CurrentProcessRotation: Integer;
+    function  CurrentAdjustmentStrength: Integer;
     function  CurrentAdjustmentFlags: Integer;
     function  ProjectFramesFolder: String;
     function  ArchiveListLineIndexForFrame(FrameIdx: Integer): Integer;
@@ -1466,6 +1475,11 @@ end;
 destructor TExportWorkerThread.Destroy;
 begin
   FreeSourceCache;
+  if Assigned(FSettings.StripCache) then
+  begin
+    FSettings.StripCache.ReleaseOwner;
+    FSettings.StripCache := nil;
+  end;
   inherited Destroy;
 end;
 
@@ -1621,128 +1635,17 @@ begin
 end;
 
 procedure TExportWorkerThread.ApplyGrayAdjustment(ABitmap: TBGRABitmap; Method,
-  Flags, Contrast, Brightness, Gamma: Integer);
-const
-  CURVE_POINT_COUNT = 16;
-  CURVE_IN: array[0..CURVE_POINT_COUNT - 1] of Integer =
-    (0, 273, 546, 819, 1092, 1365, 1638, 1911,
-     2184, 2457, 2730, 3003, 3276, 3549, 3822, 4095);
-  CURVE_OUT: array[0..CURVE_POINT_COUNT - 1] of Integer =
-    (0, 429, 764, 1071, 1361, 1639, 1908, 2170,
-     2425, 2675, 2921, 3162, 3423, 3635, 3866, 4095);
-  CURVE_GAMMA12_OUT: array[0..CURVE_POINT_COUNT - 1] of Integer =
-    (0, 429, 764, 1071, 1361, 1639, 1908, 2170,
-     2425, 2675, 2921, 3162, 3400, 3635, 3866, 4095);
-var
-  X, Y: Integer;
-  LUT: array[0..255] of Byte;
-  P: PBGRAPixel;
-
-  function ClampByte(Value: Integer): Byte;
-  begin
-    if Value < 0 then Result := 0
-    else if Value > 255 then Result := 255
-    else Result := Value;
-  end;
-
-  function AdjustChannel(Value: Integer): Byte;
-  var
-    V, C, G: Double;
-    In12, Out12, I: Integer;
-  begin
-    V := Value / 255.0;
-    if Method in [2, 3, 4] then
-    begin
-      In12 := Round(V * 4095.0);
-      if Method = 3 then
-        Out12 := CURVE_GAMMA12_OUT[CURVE_POINT_COUNT - 1]
-      else
-        Out12 := CURVE_OUT[CURVE_POINT_COUNT - 1];
-      for I := 0 to CURVE_POINT_COUNT - 2 do
-        if In12 <= CURVE_IN[I + 1] then
-        begin
-          if Method = 3 then
-            Out12 := CURVE_GAMMA12_OUT[I] +
-              Round((Int64(In12 - CURVE_IN[I]) *
-                    (CURVE_GAMMA12_OUT[I + 1] - CURVE_GAMMA12_OUT[I])) /
-                    (CURVE_IN[I + 1] - CURVE_IN[I]))
-          else
-            Out12 := CURVE_OUT[I] +
-              Round((Int64(In12 - CURVE_IN[I]) *
-                    (CURVE_OUT[I + 1] - CURVE_OUT[I])) /
-                    (CURVE_IN[I + 1] - CURVE_IN[I]));
-          Break;
-        end;
-      V := Out12 / 4095.0;
-    end;
-
-    if Method in [1, 4] then
-    begin
-      G := Power(2.0, -Gamma / 255.0);
-      if G <= 0.01 then G := 1.0;
-      V := Power(V, 1.0 / G);
-      C := Power(2.0, (Contrast - 64) / 128.0);
-      V := ((V - 0.5) * C) + 0.5;
-      V := V - (Brightness / 510.0);
-    end
-    else
-    begin
-      G := Gamma / 100.0;
-      if G <= 0.01 then G := 1.0;
-      V := Power(V, 1.0 / G);
-      C := (100.0 + Contrast) / 100.0;
-      V := ((V - 0.5) * C) + 0.5;
-      V := V + (Brightness / 100.0);
-    end;
-
-    if (Flags and ADJ_FLAG_SHADOW_LIFT) <> 0 then
-      V := Power(Max(0.0, Min(1.0, V)), 1.0 / 1.45);
-    if (Flags and ADJ_FLAG_HIGHLIGHT_RECOVERY) <> 0 then
-      V := V / (V + (1.0 - V) * 1.20);
-    if (Flags and ADJ_FLAG_S_CURVE) <> 0 then
-      V := V * V * (3.0 - 2.0 * V);
-    if (Flags and ADJ_FLAG_DOCUMENT_RESCUE) <> 0 then
-    begin
-      V := Power(Max(0.0, Min(1.0, V)), 1.0 / 1.35);
-      if V > 0.70 then
-        V := 0.70 + (V - 0.70) * 0.72;
-    end;
-    if (Flags and ADJ_FLAG_SOFT_CONTRAST) <> 0 then
-    begin
-      V := ((V - 0.5) * 0.82) + 0.5;
-      V := Power(Max(0.0, Min(1.0, V)), 1.0 / 1.08);
-    end;
-    Result := ClampByte(Round(V * 255.0));
-  end;
-
+  Flags, Contrast, Brightness, Gamma: Integer; Negative: Boolean);
 begin
-  for X := 0 to 255 do
-    LUT[X] := AdjustChannel(X);
-  for Y := 0 to ABitmap.Height - 1 do
-  begin
-    P := ABitmap.ScanLine[Y];
-    for X := 0 to ABitmap.Width - 1 do
-    begin
-      P^.red := LUT[P^.red];
-      P^.green := LUT[P^.green];
-      P^.blue := LUT[P^.blue];
-      Inc(P);
-    end;
-  end;
+  ApplyToneToBitmap(ABitmap, Method, Flags, Contrast, Brightness, Gamma,
+    FSettings.GlobalStrength, Negative);
 end;
 
 function TExportWorkerThread.AdjustmentIsNoOp(Method, Flags, Contrast,
   Brightness, Gamma: Integer): Boolean;
 begin
-  if Flags <> 0 then Exit(False);
-  case Method of
-    1, 4:
-      Result := (Contrast = 64) and (Brightness = 0) and (Gamma = 0);
-    2, 3:
-      Result := False;
-  else
-    Result := (Contrast = 0) and (Brightness = 0) and (Gamma = 100);
-  end;
+  Result := ToneIsNoOp(Method, Flags, Contrast, Brightness, Gamma,
+    FSettings.GlobalStrength);
 end;
 
 function TExportWorkerThread.BuildFrameBitmap(FrameIdx: Integer;
@@ -1893,7 +1796,8 @@ begin
       if FlipH then ProcessedBmp.HorizontalFlip;
       if FlipV then ProcessedBmp.VerticalFlip;
       if not AdjustmentIsNoOp(Method, Flags, Contrast, Brightness, Gamma) then
-        ApplyGrayAdjustment(ProcessedBmp, Method, Flags, Contrast, Brightness, Gamma);
+        ApplyGrayAdjustment(ProcessedBmp, Method, Flags, Contrast, Brightness,
+          Gamma, Negative);
       if Negative then ApplyNegative(ProcessedBmp);
       ApplySharpnessFilter(ProcessedBmp, FSettings.GlobalSharpnessMode,
         FSettings.GlobalSharpness);
@@ -1912,6 +1816,159 @@ begin
       Err := E.Message;
       FreeAndNil(ABitmap);
     end;
+  end;
+end;
+
+{ Fast path for grayscale strips: the same frame as BuildFrameBitmap, built on
+  one byte per pixel from the strip cache that all workers share. Returns
+  False (and the caller falls back to BuildFrameBitmap) when a strip is not a
+  grayscale JPEG or anything else goes wrong. }
+function TExportWorkerThread.BuildFrameGray(FrameIdx: Integer;
+  out Frame: TGrayFrame; out Err: String; out LoadMs, CropMs,
+  AdjustMs: Int64): Boolean;
+var
+  F: TFrameRecord;
+  FirstStrip, LastStrip, StripIdx, DS: Integer;
+  UseFullSource: Boolean;
+  LocalLead, LocalTrail: Int64;
+  SrcLeft, SrcRight, SrcTop, SrcBottom: Integer;
+  SourceW, SourceH, TotalW, MaxH, OffsetX: Integer;
+  SourcePath: String;
+  Strip: TGrayStrip;
+  SegmentRects: array of TRect;
+  Rot, Method, Flags, Contrast, Brightness, Gamma: Integer;
+  FlipH, FlipV, Negative: Boolean;
+  StageStart: QWord;
+begin
+  Result := False;
+  GrayFrameInit(Frame);
+  Err := '';
+  LoadMs := 0;
+  CropMs := 0;
+  AdjustMs := 0;
+  F := FSettings.Frames[FrameIdx];
+  DS := Max(1, FSettings.Roll.PreviewDownScale);
+  FirstStrip := Max(0, FrameLeadStrip(F, FSettings.Roll.LengthLines));
+  LastStrip := Min(FSettings.Roll.StripCount - 1,
+    FrameTrailStrip(F, FSettings.Roll.LengthLines));
+  if LastStrip < FirstStrip then LastStrip := FirstStrip;
+  UseFullSource := FrameStripFilesAvailable(F, FirstStrip, LastStrip);
+  if (not UseFullSource) and (not FSettings.AllowPreviewFallback) then
+  begin
+    Err := 'Missing full strip source for frame; preview fallback is disabled.';
+    Exit;
+  end;
+
+  SetLength(SegmentRects, LastStrip - FirstStrip + 1);
+  TotalW := 0;
+  MaxH := 0;
+  for StripIdx := FirstStrip to LastStrip do
+  begin
+    LocalLead := F.LeadEdge - Int64(StripIdx) * FSettings.Roll.LengthLines;
+    LocalTrail := F.TrailEdge - Int64(StripIdx) * FSettings.Roll.LengthLines;
+    if LocalLead < 0 then LocalLead := 0;
+    if LocalTrail > FSettings.Roll.LengthLines then
+      LocalTrail := FSettings.Roll.LengthLines;
+    if LocalTrail <= LocalLead then Continue;
+
+    if UseFullSource then
+    begin
+      SourceW := Max(1, FSettings.Roll.WidthPixels);
+      SourceH := Max(1, FSettings.Roll.LengthLines);
+      SrcLeft := ClampInt(LocalLead, 0, SourceH - 1);
+      SrcRight := ClampInt(LocalTrail, SrcLeft + 1, SourceH);
+      SrcTop := ClampInt(F.LeftEdge, 0, SourceW - 1);
+      SrcBottom := ClampInt(F.RightEdge, SrcTop + 1, SourceW);
+    end
+    else
+    begin
+      SourceW := CeilDiv64(FSettings.Roll.WidthPixels, DS);
+      SourceH := CeilDiv64(FSettings.Roll.LengthLines, DS);
+      SrcLeft := ClampInt(LocalLead div DS, 0, SourceH - 1);
+      SrcRight := ClampInt((LocalTrail + DS - 1) div DS, SrcLeft + 1, SourceH);
+      SrcTop := ClampInt(F.LeftEdge div DS, 0, SourceW - 1);
+      SrcBottom := ClampInt((F.RightEdge + DS - 1) div DS, SrcTop + 1, SourceW);
+    end;
+    SegmentRects[StripIdx - FirstStrip] := Rect(SrcLeft, SrcTop, SrcRight, SrcBottom);
+    Inc(TotalW, SrcRight - SrcLeft);
+    MaxH := Max(MaxH, SrcBottom - SrcTop);
+  end;
+
+  if (TotalW <= 0) or (MaxH <= 0) then
+  begin
+    Err := 'Frame has no visible image area.';
+    Exit;
+  end;
+
+  try
+    try
+      GrayFrameAlloc(Frame, TotalW, MaxH);
+      OffsetX := 0;
+      for StripIdx := FirstStrip to LastStrip do
+      begin
+        SrcLeft := SegmentRects[StripIdx - FirstStrip].Left;
+        SrcTop := SegmentRects[StripIdx - FirstStrip].Top;
+        SrcRight := SegmentRects[StripIdx - FirstStrip].Right;
+        SrcBottom := SegmentRects[StripIdx - FirstStrip].Bottom;
+        if (SrcRight <= SrcLeft) or (SrcBottom <= SrcTop) then Continue;
+
+        if UseFullSource then
+          SourcePath := StripFilePath(FSettings.Roll, StripIdx)
+        else
+          SourcePath := PreviewFilePath(FSettings.Roll, StripIdx);
+        if not FileExists(SourcePath) then
+        begin
+          Err := 'Missing source image: ' + SourcePath;
+          Exit;
+        end;
+
+        StageStart := GetTickCount64;
+        Strip := nil;
+        if FSettings.StripCache.Acquire(SourcePath, Strip, Err) <> sarOk then
+        begin
+          if Err = '' then
+            Err := 'Could not load source image: ' + SourcePath;
+          Exit;
+        end;
+        Inc(LoadMs, GetTickCount64 - StageStart);
+        try
+          StageStart := GetTickCount64;
+          { The strip is stored turned on its side, so the frame's lead/trail
+            edges run along the strip's height. }
+          SrcTop := ClampInt(SrcTop, 0, Strip.Width - 1);
+          SrcBottom := ClampInt(SrcBottom, SrcTop + 1, Strip.Width);
+          SrcLeft := ClampInt(SrcLeft, 0, Strip.Height - 1);
+          SrcRight := ClampInt(SrcRight, SrcLeft + 1, Strip.Height);
+          GrayBlitRotated(Strip.Data, Strip.Width, Strip.Height,
+            Rect(SrcTop, SrcLeft, SrcBottom, SrcRight),
+            FSettings.SourceRotateCW, Frame, OffsetX);
+          Inc(OffsetX, SrcRight - SrcLeft);
+          Inc(CropMs, GetTickCount64 - StageStart);
+        finally
+          FSettings.StripCache.Release(Strip);
+        end;
+      end;
+
+      ResolveFrameProcessing(F, Rot, FlipH, FlipV, Negative, Method, Flags,
+        Contrast, Brightness, Gamma);
+      StageStart := GetTickCount64;
+      GrayOrient(Frame, Rot, FlipH, FlipV);
+      if not AdjustmentIsNoOp(Method, Flags, Contrast, Brightness, Gamma) then
+        ApplyToneGray(Frame.Data, Frame.Width, Frame.Height, Frame.Width,
+          Method, Flags, Contrast, Brightness, Gamma, FSettings.GlobalStrength,
+          Negative);
+      if Negative then GrayNegative(Frame);
+      GraySharpen(Frame, FSettings.GlobalSharpnessMode,
+        FSettings.GlobalSharpness);
+      Inc(AdjustMs, GetTickCount64 - StageStart);
+      Result := True;
+    except
+      on E: Exception do
+        Err := E.Message;
+    end;
+  finally
+    if not Result then
+      GrayFrameFree(Frame);
   end;
 end;
 
@@ -1994,11 +2051,15 @@ procedure TExportWorkerThread.Execute;
 var
   Job: TExportJob;
   Bmp: TBGRABitmap;
+  Gray: TGrayFrame;
+  Jpeg: TBytes;
   Err: String;
-  BuildOk: Boolean;
+  BuildOk, GrayOk: Boolean;
   BuildAttempt: Integer;
   StartMs, BuildDoneMs, SaveStartMs, SaveDoneMs: QWord;
 begin
+  GrayFrameInit(Gray);
+  Jpeg := nil;
   try
     while Assigned(FOwner) and (not Terminated) do
     begin
@@ -2019,6 +2080,7 @@ begin
       FDoneTotalMs := 0;
       StartMs := GetTickCount64;
       Bmp := nil;
+      GrayOk := False;
       try
         TraceJob('claim', Job, Job.FullPath);
         if FSettings.SkipExisting and FileExists(Job.FullPath) then
@@ -2029,6 +2091,23 @@ begin
         else
         begin
           BuildOk := False;
+          if FSettings.UseGrayPath and Assigned(FSettings.StripCache) then
+          begin
+            TraceJob('build-start', Job, 'grayscale path');
+            Err := '';
+            GrayOk := BuildFrameGray(Job.FrameIdx, Gray, Err, FDoneLoadMs,
+              FDoneCropMs, FDoneAdjustMs);
+            BuildOk := GrayOk;
+            if not GrayOk then
+            begin
+              { Not a grayscale strip, or a problem: free what the shared
+                cache can spare and build this frame the original way. }
+              TraceJob('gray-fallback', Job, Err);
+              if IsBitmapResourceError(Err) then
+                FSettings.StripCache.DropUnused;
+            end;
+          end;
+          if not GrayOk then
           for BuildAttempt := 1 to 3 do
           begin
             TraceJob('build-start', Job, Format('attempt %d', [BuildAttempt]));
@@ -2053,6 +2132,8 @@ begin
             TraceJob('build-retry-resource', Job, Err);
             FreeAndNil(Bmp);
             ClearSourceCache;
+            if Assigned(FSettings.StripCache) then
+              FSettings.StripCache.DropUnused;
             Sleep(1500 * BuildAttempt);
           end;
 
@@ -2079,11 +2160,32 @@ begin
             begin
               TraceJob('save-start', Job, Job.FullPath);
               SaveStartMs := GetTickCount64;
-              EnterCriticalsection(FOwner.FExportSaveLock);
-              try
-                SaveJpegStaged(Bmp, Job.FullPath);
-              finally
-                LeaveCriticalsection(FOwner.FExportSaveLock);
+              if GrayOk then
+              begin
+                { Compress here, at the same time as the other workers. Only
+                  the file write itself waits for its turn. }
+                if not TurboEncode(Gray.Data, Gray.Width, Gray.Height,
+                  Gray.Width, TURBO_PF_GRAY, FSettings.JpgQuality,
+                  FSettings.JpgProgressive, Jpeg, Err) then
+                  raise Exception.Create(Err);
+                GrayFrameFree(Gray);
+                EnterCriticalsection(FOwner.FExportSaveLock);
+                try
+                  if not WriteBytesToFile(Job.FullPath, Jpeg, Err) then
+                    raise Exception.Create(Err);
+                finally
+                  LeaveCriticalsection(FOwner.FExportSaveLock);
+                end;
+                Jpeg := nil;
+              end
+              else
+              begin
+                EnterCriticalsection(FOwner.FExportSaveLock);
+                try
+                  SaveJpegStaged(Bmp, Job.FullPath);
+                finally
+                  LeaveCriticalsection(FOwner.FExportSaveLock);
+                end;
               end;
               SaveDoneMs := GetTickCount64;
               FDoneSaveMs := SaveDoneMs - SaveStartMs;
@@ -2118,6 +2220,8 @@ begin
         Synchronize(@SyncJobDone);
       finally
         Bmp.Free;
+        GrayFrameFree(Gray);
+        Jpeg := nil;
       end;
     end;
   finally
@@ -3321,7 +3425,7 @@ begin
   Inc(Y, 164);
 
   { ── Image Adjustment ── }
-  AdjGrp := MakeGroupBox(Scroll, 'Gray Image Adjustment', 4, Y, 304, 454);
+  AdjGrp := MakeGroupBox(Scroll, 'Gray Image Adjustment', 4, Y, 304, 482);
   MakeLabel(AdjGrp, 'Method:', 8, 20);
   FComboAdjustMethod := TComboBox.Create(Self);
   FComboAdjustMethod.Parent := AdjGrp;
@@ -3334,6 +3438,12 @@ begin
   FComboAdjustMethod.Items.Add('Original curve');
   FComboAdjustMethod.Items.Add('Gamma 1.2 curve');
   FComboAdjustMethod.Items.Add('Original curve + Quantum sliders');
+  { Adaptive methods: they look at each frame before adjusting it. }
+  FComboAdjustMethod.Items.Add(ToneMethodName(TONE_AUTO_LEVELS));
+  FComboAdjustMethod.Items.Add(ToneMethodName(TONE_CLAHE));
+  FComboAdjustMethod.Items.Add(ToneMethodName(TONE_LOCAL_EXPOSURE));
+  FComboAdjustMethod.Items.Add(ToneMethodName(TONE_BACKGROUND_FLATTEN));
+  FComboAdjustMethod.DropDownCount := 12;
   FComboAdjustMethod.ItemIndex := 0;
   FComboAdjustMethod.OnChange := @OnAdjustmentMethodChanged;
 
@@ -3379,22 +3489,40 @@ begin
   FSpinGamma.Value    := 100;
   FSpinGamma.OnChange := @OnAdjustmentSpinChanged;
 
-  MakeLabel(AdjGrp, 'JPEG Quality:', 8, 132);
+  MakeLabel(AdjGrp, 'Strength:',    8, 132);
+  FTrackStrength := MakeTrack(AdjGrp, 80, 128, 154, TONE_STRENGTH_MIN,
+    TONE_STRENGTH_MAX, TONE_STRENGTH_DEFAULT);
+  FTrackStrength.OnChange := @OnStrengthChanged;
+  FTrackStrength.OnMouseDown := @OnAdjustmentSliderMouseDown;
+  FTrackStrength.OnMouseUp := @OnAdjustmentSliderRelease;
+  FTrackStrength.OnKeyUp := @OnAdjustmentSliderKeyUp;
+  FTrackStrength.Enabled := False;
+  FSpinStrength := TSpinEdit.Create(Self);
+  FSpinStrength.Parent   := AdjGrp;
+  FSpinStrength.Left     := 240; FSpinStrength.Top := 126;
+  FSpinStrength.Width    := 52;
+  FSpinStrength.MinValue := TONE_STRENGTH_MIN;
+  FSpinStrength.MaxValue := TONE_STRENGTH_MAX;
+  FSpinStrength.Value    := TONE_STRENGTH_DEFAULT;
+  FSpinStrength.OnChange := @OnStrengthChanged;
+  FSpinStrength.Enabled  := False;
+
+  MakeLabel(AdjGrp, 'JPEG Quality:', 8, 160);
   FSpinQuality := TSpinEdit.Create(Self);
   FSpinQuality.Parent   := AdjGrp;
-  FSpinQuality.Left     := 90;  FSpinQuality.Top    := 128;
+  FSpinQuality.Left     := 90;  FSpinQuality.Top    := 156;
   FSpinQuality.Width    := 60;
   FSpinQuality.MinValue := 1;   FSpinQuality.MaxValue := 100;
   FSpinQuality.Value    := DEFAULT_JPG_QUALITY;
   FSpinQuality.OnChange := @OnExportNamingChanged;
 
-  MakeButton(AdjGrp, 'Scan Defaults', 184, 128, 104, 24, @OnScanDefaults);
+  MakeButton(AdjGrp, 'Scan Defaults', 184, 156, 104, 24, @OnScanDefaults);
 
   FChkShadowLift := TCheckBox.Create(Self);
   FChkShadowLift.Parent := AdjGrp;
   FChkShadowLift.Caption := 'Shadow lift';
   FChkShadowLift.Left := 8;
-  FChkShadowLift.Top := 160;
+  FChkShadowLift.Top := 188;
   FChkShadowLift.Width := 110;
   FChkShadowLift.OnChange := @OnAdjustmentOptionChanged;
 
@@ -3402,7 +3530,7 @@ begin
   FChkHighlightRecovery.Parent := AdjGrp;
   FChkHighlightRecovery.Caption := 'Highlight recovery';
   FChkHighlightRecovery.Left := 152;
-  FChkHighlightRecovery.Top := 160;
+  FChkHighlightRecovery.Top := 188;
   FChkHighlightRecovery.Width := 116;
   FChkHighlightRecovery.OnChange := @OnAdjustmentOptionChanged;
 
@@ -3410,7 +3538,7 @@ begin
   FChkSCurveContrast.Parent := AdjGrp;
   FChkSCurveContrast.Caption := 'S-curve contrast';
   FChkSCurveContrast.Left := 8;
-  FChkSCurveContrast.Top := 186;
+  FChkSCurveContrast.Top := 214;
   FChkSCurveContrast.Width := 116;
   FChkSCurveContrast.OnChange := @OnAdjustmentOptionChanged;
 
@@ -3418,7 +3546,7 @@ begin
   FChkDocumentRescue.Parent := AdjGrp;
   FChkDocumentRescue.Caption := 'Document rescue';
   FChkDocumentRescue.Left := 152;
-  FChkDocumentRescue.Top := 186;
+  FChkDocumentRescue.Top := 214;
   FChkDocumentRescue.Width := 116;
   FChkDocumentRescue.OnChange := @OnAdjustmentOptionChanged;
 
@@ -3426,12 +3554,12 @@ begin
   FChkSoftContrast.Parent := AdjGrp;
   FChkSoftContrast.Caption := 'Soft contrast';
   FChkSoftContrast.Left := 8;
-  FChkSoftContrast.Top := 212;
+  FChkSoftContrast.Top := 240;
   FChkSoftContrast.Width := 116;
   FChkSoftContrast.OnChange := @OnAdjustmentOptionChanged;
 
-  MakeLabel(AdjGrp, 'Sharpness:', 8, 238);
-  FTrackSharpness := MakeTrack(AdjGrp, 80, 234, 154, 0, 100, 0);
+  MakeLabel(AdjGrp, 'Sharpness:', 8, 266);
+  FTrackSharpness := MakeTrack(AdjGrp, 80, 262, 154, 0, 100, 0);
   FTrackSharpness.OnChange := @OnSharpnessChanged;
   FTrackSharpness.OnMouseDown := @OnAdjustmentSliderMouseDown;
   FTrackSharpness.OnMouseUp := @OnAdjustmentSliderRelease;
@@ -3439,18 +3567,18 @@ begin
   FSpinSharpness := TSpinEdit.Create(Self);
   FSpinSharpness.Parent := AdjGrp;
   FSpinSharpness.Left := 240;
-  FSpinSharpness.Top := 232;
+  FSpinSharpness.Top := 260;
   FSpinSharpness.Width := 52;
   FSpinSharpness.MinValue := 0;
   FSpinSharpness.MaxValue := 100;
   FSpinSharpness.Value := 0;
   FSpinSharpness.OnChange := @OnSharpnessChanged;
 
-  MakeLabel(AdjGrp, 'Sharp mode:', 8, 266);
+  MakeLabel(AdjGrp, 'Sharp mode:', 8, 294);
   FComboSharpnessMode := TComboBox.Create(Self);
   FComboSharpnessMode.Parent := AdjGrp;
   FComboSharpnessMode.Left := 80;
-  FComboSharpnessMode.Top := 262;
+  FComboSharpnessMode.Top := 290;
   FComboSharpnessMode.Width := 216;
   FComboSharpnessMode.Style := csDropDownList;
   FComboSharpnessMode.Items.Add('Soft');
@@ -3460,9 +3588,9 @@ begin
   FComboSharpnessMode.ItemIndex := 0;
   FComboSharpnessMode.OnChange := @OnSharpnessModeChanged;
 
-  FBtnAutoAdjustSelected := MakeButton(AdjGrp, 'Auto Adjust Selected', 8, 294, 280, 24, @OnAutoAdjustSelected);
+  FBtnAutoAdjustSelected := MakeButton(AdjGrp, 'Auto Adjust Selected', 8, 322, 280, 24, @OnAutoAdjustSelected);
 
-  FLblSelectedAdjustment := MakeLabel(AdjGrp, 'Selected override: none', 8, 330);
+  FLblSelectedAdjustment := MakeLabel(AdjGrp, 'Selected override: none', 8, 358);
   FLblSelectedAdjustment.Width := 280;
   FLblSelectedAdjustment.Height := 20;
   FLblSelectedAdjustment.AutoSize := False;
@@ -3471,14 +3599,14 @@ begin
   FChkAdjustPreview.Parent   := AdjGrp;
   FChkAdjustPreview.Caption  := 'Apply adjustments to preview';
   FChkAdjustPreview.Left     := 8;
-  FChkAdjustPreview.Top      := 354;
+  FChkAdjustPreview.Top      := 382;
   FChkAdjustPreview.Width    := 280;
   FChkAdjustPreview.Checked  := False;
   FChkAdjustPreview.OnChange := @OnAdjustPreviewToggle;
 
-  FBtnApplyPreview := MakeButton(AdjGrp, 'Apply Preview', 8, 382, 280, 24, @OnPreviewAdjustmentChanged);
+  FBtnApplyPreview := MakeButton(AdjGrp, 'Apply Preview', 8, 410, 280, 24, @OnPreviewAdjustmentChanged);
   FBtnApplyPreview.Enabled := False;
-  Inc(Y, 464);
+  Inc(Y, 492);
 
   { ── Export Scope ── }
   ScopeGrp := MakeGroupBox(Scroll, 'Export Scope', 4, Y, 304, 92);
@@ -4348,6 +4476,14 @@ begin
   else Result := 0;
 end;
 
+function TMainForm.CurrentAdjustmentStrength: Integer;
+begin
+  if Assigned(FTrackStrength) then
+    Result := FTrackStrength.Position
+  else
+    Result := TONE_STRENGTH_DEFAULT;
+end;
+
 function TMainForm.CurrentAdjustmentFlags: Integer;
 begin
   Result := 0;
@@ -4754,6 +4890,8 @@ end;
 
 procedure TMainForm.StoreAdjustmentControlsToRoll;
 begin
+  { Strength belongs to the roll, not to single frames. }
+  FRollData.StriplightAdjustStrength := CurrentAdjustmentStrength;
   if Assigned(FChkPerFrame) then
     if FChkPerFrame.Checked then Exit;
   if Assigned(FComboAdjustMethod) then
@@ -4851,6 +4989,11 @@ begin
     FSpinContrast.Value := FTrackContrast.Position;
     FSpinBrightness.Value := FTrackBrightness.Position;
     FSpinGamma.Value := FTrackGamma.Position;
+    if Assigned(FTrackStrength) then
+      FTrackStrength.Position := Max(FTrackStrength.Min,
+        Min(FTrackStrength.Max, FRollData.StriplightAdjustStrength));
+    if Assigned(FSpinStrength) then
+      FSpinStrength.Value := FTrackStrength.Position;
     if Assigned(FTrackSharpness) then
       FTrackSharpness.Position := Max(FTrackSharpness.Min,
         Min(FTrackSharpness.Max, FRollData.StriplightSharpness));
@@ -5307,133 +5450,6 @@ var
   end;
 
   procedure ApplyGrayAdjustment(ABitmap: TBGRABitmap);
-  const
-    CURVE_POINT_COUNT = 16;
-    CURVE_IN: array[0..CURVE_POINT_COUNT - 1] of Integer =
-      (0, 273, 546, 819, 1092, 1365, 1638, 1911,
-       2184, 2457, 2730, 3003, 3276, 3549, 3822, 4095);
-    CURVE_OUT: array[0..CURVE_POINT_COUNT - 1] of Integer =
-      (0, 429, 764, 1071, 1361, 1639, 1908, 2170,
-       2425, 2675, 2921, 3162, 3423, 3635, 3866, 4095);
-    CURVE_GAMMA12_OUT: array[0..CURVE_POINT_COUNT - 1] of Integer =
-      (0, 429, 764, 1071, 1361, 1639, 1908, 2170,
-       2425, 2675, 2921, 3162, 3400, 3635, 3866, 4095);
-  var
-    NX, NY: Integer;
-    LUT: array[0..255] of Byte;
-    P: PBGRAPixel;
-
-    function ClampByte(Value: Integer): Byte;
-    begin
-      if Value < 0 then Result := 0
-      else if Value > 255 then Result := 255
-      else Result := Value;
-    end;
-
-    function AdjustChannel(Value: Integer): Byte;
-    var
-      V, C, G: Double;
-      In12, Out12, I: Integer;
-    begin
-      V := Value / 255.0;
-      if AdjustMethod in [2, 3, 4] then
-      begin
-        In12 := Round(V * 4095.0);
-        if AdjustMethod = 3 then
-          Out12 := CURVE_GAMMA12_OUT[CURVE_POINT_COUNT - 1]
-        else
-          Out12 := CURVE_OUT[CURVE_POINT_COUNT - 1];
-        for I := 0 to CURVE_POINT_COUNT - 2 do
-          if In12 <= CURVE_IN[I + 1] then
-          begin
-            if CURVE_IN[I + 1] = CURVE_IN[I] then
-            begin
-              if AdjustMethod = 3 then
-                Out12 := CURVE_GAMMA12_OUT[I]
-              else
-                Out12 := CURVE_OUT[I];
-            end
-            else
-            begin
-              if AdjustMethod = 3 then
-                Out12 := CURVE_GAMMA12_OUT[I] +
-                  Round((Int64(In12 - CURVE_IN[I]) *
-                        (CURVE_GAMMA12_OUT[I + 1] - CURVE_GAMMA12_OUT[I])) /
-                        (CURVE_IN[I + 1] - CURVE_IN[I]))
-              else
-                Out12 := CURVE_OUT[I] +
-                  Round((Int64(In12 - CURVE_IN[I]) *
-                        (CURVE_OUT[I + 1] - CURVE_OUT[I])) /
-                        (CURVE_IN[I + 1] - CURVE_IN[I]));
-            end;
-            Break;
-        end;
-        V := Out12 / 4095.0;
-
-        if AdjustMethod = 4 then
-        begin
-          G := Power(2.0, -AdjustGamma / 255.0);
-          if G <= 0.01 then G := 1.0;
-          V := Power(V, 1.0 / G);
-
-          C := Power(2.0, (AdjustContrast - 64) / 128.0);
-          V := ((V - 0.5) * C) + 0.5;
-          V := V - (AdjustBrightness / 510.0);
-        end
-        else
-        begin
-          G := AdjustGamma / 100.0;
-          if G <= 0.01 then G := 1.0;
-          V := Power(V, 1.0 / G);
-
-          C := (100.0 + AdjustContrast) / 100.0;
-          V := ((V - 0.5) * C) + 0.5;
-          V := V + (AdjustBrightness / 100.0);
-        end;
-      end
-      else if AdjustMethod = 1 then
-      begin
-        G := Power(2.0, -AdjustGamma / 255.0);
-        if G <= 0.01 then G := 1.0;
-        V := Power(V, 1.0 / G);
-
-        C := Power(2.0, (AdjustContrast - 64) / 128.0);
-        V := ((V - 0.5) * C) + 0.5;
-        V := V - (AdjustBrightness / 510.0);
-      end
-      else
-      begin
-        G := AdjustGamma / 100.0;
-        if G <= 0.01 then G := 1.0;
-        V := Power(V, 1.0 / G);
-
-        C := (100.0 + AdjustContrast) / 100.0;
-        V := ((V - 0.5) * C) + 0.5;
-        V := V + (AdjustBrightness / 100.0);
-      end;
-
-      if (AdjustFlags and ADJ_FLAG_SHADOW_LIFT) <> 0 then
-        V := Power(Max(0.0, Min(1.0, V)), 1.0 / 1.45);
-      if (AdjustFlags and ADJ_FLAG_HIGHLIGHT_RECOVERY) <> 0 then
-        V := V / (V + (1.0 - V) * 1.20);
-      if (AdjustFlags and ADJ_FLAG_S_CURVE) <> 0 then
-        V := V * V * (3.0 - 2.0 * V);
-      if (AdjustFlags and ADJ_FLAG_DOCUMENT_RESCUE) <> 0 then
-      begin
-        V := Power(Max(0.0, Min(1.0, V)), 1.0 / 1.35);
-        if V > 0.70 then
-          V := 0.70 + (V - 0.70) * 0.72;
-      end;
-      if (AdjustFlags and ADJ_FLAG_SOFT_CONTRAST) <> 0 then
-      begin
-        V := ((V - 0.5) * 0.82) + 0.5;
-        if V < 0 then V := 0
-        else if V > 1 then V := 1;
-        V := Power(V, 1.0 / 1.08);
-      end;
-      Result := ClampByte(Round(V * 255.0));
-    end;
-
   begin
     if (ABitmap = nil) or (not Assigned(FChkAdjustPreview)) or
        (not FChkAdjustPreview.Checked) then Exit;
@@ -5448,24 +5464,17 @@ var
     begin
       { The curve itself is an adjustment, even when the fine-tune sliders are neutral. }
     end
+    else if ToneMethodIsAdaptive(AdjustMethod) then
+    begin
+      if ToneIsNoOp(AdjustMethod, AdjustFlags, AdjustContrast,
+        AdjustBrightness, AdjustGamma, CurrentAdjustmentStrength) then Exit;
+    end
     else if (AdjustBrightness = 0) and
             (AdjustContrast = 0) and
             (AdjustGamma = 100) then Exit;
 
-    for NX := 0 to 255 do
-      LUT[NX] := AdjustChannel(NX);
-
-    for NY := 0 to ABitmap.Height - 1 do
-    begin
-      P := ABitmap.ScanLine[NY];
-      for NX := 0 to ABitmap.Width - 1 do
-      begin
-        P^.red := LUT[P^.red];
-        P^.green := LUT[P^.green];
-        P^.blue := LUT[P^.blue];
-        Inc(P);
-      end;
-    end;
+    ApplyToneToBitmap(ABitmap, AdjustMethod, AdjustFlags, AdjustContrast,
+      AdjustBrightness, AdjustGamma, CurrentAdjustmentStrength, DoNegative);
   end;
 
   function StripHasVisibleFramePart(AStripIdx: Integer): Boolean;
@@ -7040,10 +7049,35 @@ begin
     FSpinContrast.Value := FTrackContrast.Position;
     FSpinBrightness.Value := FTrackBrightness.Position;
     FSpinGamma.Value := FTrackGamma.Position;
+    { Strength only means something for the adaptive methods. }
+    if Assigned(FTrackStrength) then
+      FTrackStrength.Enabled := ToneMethodIsAdaptive(FComboAdjustMethod.ItemIndex);
+    if Assigned(FSpinStrength) then
+      FSpinStrength.Enabled := ToneMethodIsAdaptive(FComboAdjustMethod.ItemIndex);
   finally
     FUpdatingAdjustments := False;
   end;
 
+  if Assigned(FChkAdjustPreview) and FChkAdjustPreview.Checked then
+  begin
+    OnPreviewAdjustmentChanged(Self);
+    if Assigned(FPreviewImage) then RenderFramePreview;
+  end;
+end;
+
+procedure TMainForm.OnStrengthChanged(Sender: TObject);
+begin
+  if FUpdatingAdjustments then Exit;
+  FUpdatingAdjustments := True;
+  try
+    if Sender = FTrackStrength then
+      FSpinStrength.Value := FTrackStrength.Position
+    else if Sender = FSpinStrength then
+      FTrackStrength.Position := FSpinStrength.Value;
+  finally
+    FUpdatingAdjustments := False;
+  end;
+  if FDraggingAdjustmentSlider then Exit;
   if Assigned(FChkAdjustPreview) and FChkAdjustPreview.Checked then
   begin
     OnPreviewAdjustmentChanged(Self);
@@ -7142,7 +7176,9 @@ begin
                                   FTrackBrightness.Position,
                                   FTrackGamma.Position,
                                   FComboAdjustMethod.ItemIndex,
-                                  CurrentAdjustmentFlags);
+                                  CurrentAdjustmentFlags,
+                                  CurrentAdjustmentStrength,
+                                  Assigned(FChkNegative) and FChkNegative.Checked);
   if Assigned(FPreviewImage) then
     RenderFramePreview;
 end;
@@ -9538,6 +9574,12 @@ begin
   Settings.GlobalSharpnessMode := 0;
   if Assigned(FComboSharpnessMode) then
     Settings.GlobalSharpnessMode := FComboSharpnessMode.ItemIndex;
+  Settings.GlobalStrength := CurrentAdjustmentStrength;
+  { Grayscale strips exported as grayscale with TurboJPEG take the fast
+    8-bit path. Everything else is built exactly as before. }
+  Settings.UseGrayPath := (Settings.JpgEncoder = EXPORT_ENCODER_TURBOJPEG) and
+    Settings.JpgGrayscale and TurboRawAvailable;
+  Settings.StripCache := nil;
 
   LoadThreads := 1;
   ProcessThreads := 1;
@@ -9548,6 +9590,9 @@ begin
   WorkerCount := Min(Length(FExportJobs), Max(LoadThreads, ProcessThreads));
   if WorkerCount < 1 then WorkerCount := 1;
   Settings.CacheLimit := Max(1, (RequestedCacheLimit + WorkerCount - 1) div WorkerCount);
+  if Settings.UseGrayPath then
+    Settings.StripCache := TGrayStripCache.Create(Max(2, RequestedCacheLimit),
+      WorkerCount);
 
   EnterCriticalsection(FExportLock);
   try
@@ -9584,9 +9629,9 @@ begin
   FExportLastTrace := '';
   DeleteFile(FExportTracePath);
   ExportTrace(FExportRunId, 0, -1, -1, 'export-start',
-    Format('%d worker(s), %d frame(s), load %d, process %d, strict batch %d',
+    Format('%d worker(s), %d frame(s), load %d, process %d, strict batch %d, grayscale path %s',
       [WorkerCount, Length(FExportJobs), LoadThreads, ProcessThreads,
-       EXPORT_JOB_BATCH_SIZE]));
+       EXPORT_JOB_BATCH_SIZE, BoolToStr(Settings.UseGrayPath, True)]));
   FBtnExportStart.Enabled := False;
   if Assigned(FBtnPrepareFolders) then
     FBtnPrepareFolders.Enabled := False;

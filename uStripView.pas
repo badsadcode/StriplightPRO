@@ -26,7 +26,7 @@ interface
 uses
   Classes, SysUtils, Controls, Graphics, LCLType, Menus,
   BGRABitmap, BGRABitmapTypes,
-  Math, uTypes;
+  Math, uTypes, uToneAdjust, uToneBitmap;
 
 type
   { Drag/resize mode for frame handles }
@@ -94,6 +94,8 @@ type
     FPreviewGamma      : Integer;
     FPreviewAdjustMode : Integer;
     FPreviewAdjustFlags: Integer;
+    FPreviewStrength   : Integer;
+    FPreviewNegative   : Boolean;
     FFrameFillOpacity  : Integer;
     FSplitPreviewEnabled: Boolean;
     FSplitPreviewParts : Integer;
@@ -246,7 +248,9 @@ type
     procedure ClearRoll;
     procedure TrimBitmapCacheToCurrentPage;
     procedure SetPreviewAdjustment(AContrast, ABrightness, AGamma: Integer; AMode: Integer = 0;
-                                   AFlags: Integer = 0);
+                                   AFlags: Integer = 0;
+                                   AStrength: Integer = TONE_STRENGTH_DEFAULT;
+                                   ANegative: Boolean = False);
 
     { Navigation }
     procedure GotoPage(PageIndex: Integer);
@@ -358,6 +362,8 @@ begin
   FPreviewGamma      := 100;
   FPreviewAdjustMode := 0;
   FPreviewAdjustFlags := 0;
+  FPreviewStrength := TONE_STRENGTH_DEFAULT;
+  FPreviewNegative := False;
   FFrameFillOpacity  := 35;
   FSplitPreviewEnabled := False;
   FSplitPreviewParts := 2;
@@ -661,133 +667,6 @@ begin
 end;
 
 procedure TStripView.ApplyPreviewAdjustment(ABitmap: TBGRABitmap);
-const
-  CURVE_POINT_COUNT = 16;
-  CURVE_IN: array[0..CURVE_POINT_COUNT - 1] of Integer =
-    (0, 273, 546, 819, 1092, 1365, 1638, 1911,
-     2184, 2457, 2730, 3003, 3276, 3549, 3822, 4095);
-  CURVE_OUT: array[0..CURVE_POINT_COUNT - 1] of Integer =
-    (0, 429, 764, 1071, 1361, 1639, 1908, 2170,
-     2425, 2675, 2921, 3162, 3423, 3635, 3866, 4095);
-  CURVE_GAMMA12_OUT: array[0..CURVE_POINT_COUNT - 1] of Integer =
-    (0, 429, 764, 1071, 1361, 1639, 1908, 2170,
-     2425, 2675, 2921, 3162, 3400, 3635, 3866, 4095);
-var
-  X, Y: Integer;
-  P: TBGRAPixel;
-  LUT: array[0..255] of Byte;
-
-  function ClampByte(Value: Integer): Byte;
-  begin
-    if Value < 0 then Result := 0
-    else if Value > 255 then Result := 255
-    else Result := Value;
-  end;
-
-  function AdjustChannel(Value: Integer): Byte;
-  var
-    V, C, G: Double;
-    In12, Out12, I: Integer;
-  begin
-    V := Value / 255.0;
-    if FPreviewAdjustMode in [2, 3, 4] then
-    begin
-      In12 := Round(V * 4095.0);
-      if FPreviewAdjustMode = 3 then
-        Out12 := CURVE_GAMMA12_OUT[CURVE_POINT_COUNT - 1]
-      else
-        Out12 := CURVE_OUT[CURVE_POINT_COUNT - 1];
-      for I := 0 to CURVE_POINT_COUNT - 2 do
-        if In12 <= CURVE_IN[I + 1] then
-        begin
-          if CURVE_IN[I + 1] = CURVE_IN[I] then
-          begin
-            if FPreviewAdjustMode = 3 then
-              Out12 := CURVE_GAMMA12_OUT[I]
-            else
-              Out12 := CURVE_OUT[I];
-          end
-          else
-          begin
-            if FPreviewAdjustMode = 3 then
-              Out12 := CURVE_GAMMA12_OUT[I] +
-                Round((Int64(In12 - CURVE_IN[I]) *
-                      (CURVE_GAMMA12_OUT[I + 1] - CURVE_GAMMA12_OUT[I])) /
-                      (CURVE_IN[I + 1] - CURVE_IN[I]))
-            else
-              Out12 := CURVE_OUT[I] +
-                Round((Int64(In12 - CURVE_IN[I]) *
-                      (CURVE_OUT[I + 1] - CURVE_OUT[I])) /
-                      (CURVE_IN[I + 1] - CURVE_IN[I]));
-          end;
-          Break;
-        end;
-      V := Out12 / 4095.0;
-
-      if FPreviewAdjustMode = 4 then
-      begin
-        G := Power(2.0, -FPreviewGamma / 255.0);
-        if G <= 0.01 then G := 1.0;
-        V := Power(V, 1.0 / G);
-
-        C := Power(2.0, (FPreviewContrast - 64) / 128.0);
-        V := ((V - 0.5) * C) + 0.5;
-        V := V - (FPreviewBrightness / 510.0);
-      end
-      else
-      begin
-        G := FPreviewGamma / 100.0;
-        if G <= 0.01 then G := 1.0;
-        V := Power(V, 1.0 / G);
-
-        C := (100.0 + FPreviewContrast) / 100.0;
-        V := ((V - 0.5) * C) + 0.5;
-        V := V + (FPreviewBrightness / 100.0);
-      end;
-    end
-    else if FPreviewAdjustMode = 1 then
-    begin
-      G := Power(2.0, -FPreviewGamma / 255.0);
-      if G <= 0.01 then G := 1.0;
-      V := Power(V, 1.0 / G);
-
-      C := Power(2.0, (FPreviewContrast - 64) / 128.0);
-      V := ((V - 0.5) * C) + 0.5;
-      V := V - (FPreviewBrightness / 510.0);
-    end
-    else
-    begin
-      G := FPreviewGamma / 100.0;
-      if G <= 0.01 then G := 1.0;
-      V := Power(V, 1.0 / G);
-
-      C := (100.0 + FPreviewContrast) / 100.0;
-      V := ((V - 0.5) * C) + 0.5;
-      V := V + (FPreviewBrightness / 100.0);
-    end;
-
-    if (FPreviewAdjustFlags and ADJ_FLAG_SHADOW_LIFT) <> 0 then
-      V := Power(Max(0.0, Min(1.0, V)), 1.0 / 1.45);
-    if (FPreviewAdjustFlags and ADJ_FLAG_HIGHLIGHT_RECOVERY) <> 0 then
-      V := V / (V + (1.0 - V) * 1.20);
-    if (FPreviewAdjustFlags and ADJ_FLAG_S_CURVE) <> 0 then
-      V := V * V * (3.0 - 2.0 * V);
-    if (FPreviewAdjustFlags and ADJ_FLAG_DOCUMENT_RESCUE) <> 0 then
-    begin
-      V := Power(Max(0.0, Min(1.0, V)), 1.0 / 1.35);
-      if V > 0.70 then
-        V := 0.70 + (V - 0.70) * 0.72;
-    end;
-    if (FPreviewAdjustFlags and ADJ_FLAG_SOFT_CONTRAST) <> 0 then
-    begin
-      V := ((V - 0.5) * 0.82) + 0.5;
-      if V < 0 then V := 0
-      else if V > 1 then V := 1;
-      V := Power(V, 1.0 / 1.08);
-    end;
-    Result := ClampByte(Round(V * 255.0));
-  end;
-
 begin
   if (ABitmap = nil) or
      (((FPreviewAdjustMode = 0) and (FPreviewBrightness = 0) and
@@ -797,18 +676,12 @@ begin
        (FPreviewContrast = 64) and (FPreviewGamma = 0) and
        (FPreviewAdjustFlags = 0))) then Exit;
 
-  for X := 0 to 255 do
-    LUT[X] := AdjustChannel(X);
-
-  for Y := 0 to ABitmap.Height - 1 do
-    for X := 0 to ABitmap.Width - 1 do
-    begin
-      P := ABitmap.GetPixel(X, Y);
-      P.red   := LUT[P.red];
-      P.green := LUT[P.green];
-      P.blue  := LUT[P.blue];
-      ABitmap.SetPixel(X, Y, P);
-    end;
+  { The adaptive methods are applied to each strip preview here, while the
+    export applies them to each frame. The strip view is therefore a close
+    guide for those methods; the frame preview window shows the exact result. }
+  ApplyToneToBitmap(ABitmap, FPreviewAdjustMode, FPreviewAdjustFlags,
+    FPreviewContrast, FPreviewBrightness, FPreviewGamma, FPreviewStrength,
+    FPreviewNegative);
 end;
 
 { ============================================================ }
@@ -2740,7 +2613,7 @@ end;
 { ============================================================ }
 
 procedure TStripView.SetPreviewAdjustment(AContrast, ABrightness, AGamma: Integer; AMode: Integer;
-  AFlags: Integer);
+  AFlags: Integer; AStrength: Integer; ANegative: Boolean);
 begin
   if AMode = 1 then
   begin
@@ -2754,7 +2627,7 @@ begin
     ABrightness := Max(-128, Min(127, ABrightness));
     AGamma := Max(-255, Min(255, AGamma));
   end
-  else if AMode in [2, 3] then
+  else if (AMode in [2, 3]) or ToneMethodIsAdaptive(AMode) then
   begin
     AContrast := Max(-100, Min(100, AContrast));
     ABrightness := Max(-100, Min(100, ABrightness));
@@ -2772,13 +2645,17 @@ begin
      (ABrightness = FPreviewBrightness) and
      (AGamma = FPreviewGamma) and
      (AMode = FPreviewAdjustMode) and
-     (AFlags = FPreviewAdjustFlags) then Exit;
+     (AFlags = FPreviewAdjustFlags) and
+     (AStrength = FPreviewStrength) and
+     (ANegative = FPreviewNegative) then Exit;
 
   FPreviewContrast := AContrast;
   FPreviewBrightness := ABrightness;
   FPreviewGamma := AGamma;
   FPreviewAdjustMode := AMode;
   FPreviewAdjustFlags := AFlags;
+  FPreviewStrength := AStrength;
+  FPreviewNegative := ANegative;
   ClearBitmapCache;
   LoadPageBitmaps;
   Invalidate;

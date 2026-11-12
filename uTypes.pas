@@ -82,6 +82,7 @@ type
     StriplightAdjustContrast: Integer;
     StriplightAdjustBrightness: Integer;
     StriplightAdjustGamma: Integer;
+    StriplightAdjustStrength: Integer; // adaptive tone methods, 0..100
     StriplightSharpness: Integer;
     StriplightSharpnessMode: Integer;
     StriplightExportNamingMode: Integer; // 0 = Quantum folders, 1 = archive list
@@ -144,6 +145,7 @@ begin
   ARoll.StriplightAdjustContrast := 0;
   ARoll.StriplightAdjustBrightness := 0;
   ARoll.StriplightAdjustGamma := 100;
+  ARoll.StriplightAdjustStrength := 50;
   ARoll.StriplightSharpness := 0;
   ARoll.StriplightSharpnessMode := 0;
   ARoll.StriplightExportNamingMode := 0;
