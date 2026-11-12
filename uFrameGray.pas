@@ -60,6 +60,9 @@ type
     function Acquire(const Path: String; out Strip: TGrayStrip;
       out Err: String): TStripAcquireResult;
     procedure Release(Strip: TGrayStrip);
+    { True when the strip is already decoded or being decoded. Lets callers
+      skip a file-exists check, which is a round trip on a network share. }
+    function Contains(const Path: String): Boolean;
     { Frees every strip that is not in use right now. }
     procedure DropUnused;
     { Each worker calls this once when it finishes; the cache frees itself
@@ -257,6 +260,16 @@ begin
     if Strip.FRefCount > 0 then
       Dec(Strip.FRefCount);
     TrimLocked(FLimit);
+  finally
+    LeaveCriticalSection(FLock);
+  end;
+end;
+
+function TGrayStripCache.Contains(const Path: String): Boolean;
+begin
+  EnterCriticalSection(FLock);
+  try
+    Result := FindLocked(Path) <> nil;
   finally
     LeaveCriticalSection(FLock);
   end;

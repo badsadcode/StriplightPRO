@@ -75,6 +75,21 @@ What is different on the fast path:
 - Each worker compresses its JPEG at the same time as the others. Only the
   final file write still takes turns. Before, compression itself was done one
   worker at a time.
+- Strips already in the cache are not checked for existence again, which
+  saves a round trip per strip per frame on a network share.
+
+### Network shares
+
+Reading strips from a share is usually the slow part of an export. The shared
+cache means each strip is fetched over the network once per export instead of
+once per worker.
+
+**Write files in parallel** (Export Settings, off by default) lets each worker
+write its finished JPEG as soon as it is ready instead of waiting for its turn.
+This can help when the output folder is on a share. It is off by default
+because the original export always wrote one file at a time; try it on a small
+selection first. The JPEG is written from memory in a single write either way,
+so **Stage JPEGs locally** makes no difference on the fast path.
 
 The output is meant to be identical to the original path for grayscale
 strips. `tests/striplight_tests.lpr` checks the lookup tables and the frame

@@ -52,6 +52,7 @@ type
     GlobalSharpnessMode: Integer;
     GlobalStrength: Integer;        // strength of the adaptive tone methods
     UseGrayPath: Boolean;           // fast 8-bit path for grayscale strips
+    ParallelWrites: Boolean;        // fast path: do not queue file writes
     StripCache: TGrayStripCache;    // decoded strips shared by all workers
   end;
 
@@ -329,6 +330,7 @@ type
     FChkExportLocalTemp : TCheckBox;
     FChkPrecreateFolders: TCheckBox;
     FChkExportTiming    : TCheckBox;
+    FChkExportParallelWrites: TCheckBox;
     FProgressExport      : TProgressBar;
     FLblExportStatus     : TLabel;
 
@@ -1839,6 +1841,24 @@ var
   Rot, Method, Flags, Contrast, Brightness, Gamma: Integer;
   FlipH, FlipV, Negative: Boolean;
   StageStart: QWord;
+
+  { Strips already in the shared cache are known to exist. Asking the file
+    system again costs a round trip per strip on a network share. }
+  function SourceAvailable(const Path: String): Boolean;
+  begin
+    Result := FSettings.StripCache.Contains(Path) or FileExists(Path);
+  end;
+
+  function FullStripsAvailable: Boolean;
+  var
+    S: Integer;
+  begin
+    Result := True;
+    for S := FirstStrip to LastStrip do
+      if not SourceAvailable(StripFilePath(FSettings.Roll, S)) then
+        Exit(False);
+  end;
+
 begin
   Result := False;
   GrayFrameInit(Frame);
@@ -1852,7 +1872,7 @@ begin
   LastStrip := Min(FSettings.Roll.StripCount - 1,
     FrameTrailStrip(F, FSettings.Roll.LengthLines));
   if LastStrip < FirstStrip then LastStrip := FirstStrip;
-  UseFullSource := FrameStripFilesAvailable(F, FirstStrip, LastStrip);
+  UseFullSource := FullStripsAvailable;
   if (not UseFullSource) and (not FSettings.AllowPreviewFallback) then
   begin
     Err := 'Missing full strip source for frame; preview fallback is disabled.';
@@ -1916,7 +1936,7 @@ begin
           SourcePath := StripFilePath(FSettings.Roll, StripIdx)
         else
           SourcePath := PreviewFilePath(FSettings.Roll, StripIdx);
-        if not FileExists(SourcePath) then
+        if not SourceAvailable(SourcePath) then
         begin
           Err := 'Missing source image: ' + SourcePath;
           Exit;
@@ -2169,12 +2189,20 @@ begin
                   FSettings.JpgProgressive, Jpeg, Err) then
                   raise Exception.Create(Err);
                 GrayFrameFree(Gray);
-                EnterCriticalsection(FOwner.FExportSaveLock);
-                try
+                if FSettings.ParallelWrites then
+                begin
                   if not WriteBytesToFile(Job.FullPath, Jpeg, Err) then
                     raise Exception.Create(Err);
-                finally
-                  LeaveCriticalsection(FOwner.FExportSaveLock);
+                end
+                else
+                begin
+                  EnterCriticalsection(FOwner.FExportSaveLock);
+                  try
+                    if not WriteBytesToFile(Job.FullPath, Jpeg, Err) then
+                      raise Exception.Create(Err);
+                  finally
+                    LeaveCriticalsection(FOwner.FExportSaveLock);
+                  end;
                 end;
                 Jpeg := nil;
               end
@@ -3646,7 +3674,7 @@ begin
   Inc(Y, 182);
 
   { ── Export settings ── }
-  ExportSettingsGrp := MakeGroupBox(Scroll, 'Export Settings', 4, Y, 304, 288);
+  ExportSettingsGrp := MakeGroupBox(Scroll, 'Export Settings', 4, Y, 304, 312);
 
   FChkSkipExisting := TCheckBox.Create(Self);
   FChkSkipExisting.Parent  := ExportSettingsGrp;
@@ -3734,6 +3762,17 @@ begin
   FChkExportTiming.Width   := 190;
   FChkExportTiming.Checked := True;
 
+  { Off by default: file writes take turns, as they always have. Turning it
+    on lets every worker write its finished JPEG straight away, which helps
+    when the output folder is on a network share. Fast grayscale path only. }
+  FChkExportParallelWrites := TCheckBox.Create(Self);
+  FChkExportParallelWrites.Parent  := ExportSettingsGrp;
+  FChkExportParallelWrites.Caption := 'Write files in parallel (TurboJPEG gray)';
+  FChkExportParallelWrites.Left    := 8;
+  FChkExportParallelWrites.Top     := 270;
+  FChkExportParallelWrites.Width   := 280;
+  FChkExportParallelWrites.Checked := False;
+
   MakeLabel(ExportSettingsGrp, 'Cache:', 176, 106);
   FSpinExportCache := TSpinEdit.Create(Self);
   FSpinExportCache.Parent := ExportSettingsGrp;
@@ -3763,7 +3802,7 @@ begin
   FSpinExportProcessThreads.MinValue := 1;
   FSpinExportProcessThreads.MaxValue := 16;
   FSpinExportProcessThreads.Value := 4;
-  Inc(Y, 298);
+  Inc(Y, 322);
   Spacer := TPanel.Create(Self);
   Spacer.Parent := Scroll;
   Spacer.Left := 4;
@@ -9580,6 +9619,8 @@ begin
   Settings.UseGrayPath := (Settings.JpgEncoder = EXPORT_ENCODER_TURBOJPEG) and
     Settings.JpgGrayscale and TurboRawAvailable;
   Settings.StripCache := nil;
+  Settings.ParallelWrites := Assigned(FChkExportParallelWrites) and
+    FChkExportParallelWrites.Checked;
 
   LoadThreads := 1;
   ProcessThreads := 1;
@@ -9629,9 +9670,10 @@ begin
   FExportLastTrace := '';
   DeleteFile(FExportTracePath);
   ExportTrace(FExportRunId, 0, -1, -1, 'export-start',
-    Format('%d worker(s), %d frame(s), load %d, process %d, strict batch %d, grayscale path %s',
+    Format('%d worker(s), %d frame(s), load %d, process %d, strict batch %d, grayscale path %s, parallel writes %s',
       [WorkerCount, Length(FExportJobs), LoadThreads, ProcessThreads,
-       EXPORT_JOB_BATCH_SIZE, BoolToStr(Settings.UseGrayPath, True)]));
+       EXPORT_JOB_BATCH_SIZE, BoolToStr(Settings.UseGrayPath, True),
+       BoolToStr(Settings.ParallelWrites, True)]));
   FBtnExportStart.Enabled := False;
   if Assigned(FBtnPrepareFolders) then
     FBtnPrepareFolders.Enabled := False;
