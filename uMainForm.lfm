@@ -1,0 +1,8 @@
+object MainForm: TMainForm
+  Left = 137
+  Height = 800
+  Top = 152
+  Width = 1280
+  Caption = 'Striplight'
+  LCLVersion = '2.2.4.0'
+end

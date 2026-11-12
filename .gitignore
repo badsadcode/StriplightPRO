@@ -1,0 +1,24 @@
+# Compiler output and executables
+/lib/
+*.exe
+*.o
+*.obj
+*.ppu
+*.or
+*.a
+*.compiled
+*.dbg
+*.rst
+*.rsj
+# Local IDE state and scratch files
+*.lps
+*.bak
+*~
+/backup/
+/.compile-check-config/
+*.log
+# Archives and local data
+*.zip
+*.7z
+/libjpeg-turbo-*/
+/*_sample_*.jpg
