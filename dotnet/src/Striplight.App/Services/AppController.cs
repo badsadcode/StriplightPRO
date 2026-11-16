@@ -919,6 +919,10 @@ public sealed class AppController
         _export = ExportFromSettings(project.Roll);
         _panels = null;
         RestoreState(project.Roll);
+        // No output folder saved with the project: fill in the default (QuantumScan style: a
+        // "frames" folder next to the project) as real text, so it can be edited and is saved.
+        if (string.IsNullOrWhiteSpace(_export.OutputRoot))
+            _export.OutputRoot = ExportNaming.DefaultOutputRoot(ProjectRootPath, _project.Roll);
         ApplyCache();
         _imageVersion++;
         _settings.LastFolder = Path.GetDirectoryName(Path.GetFullPath(path)) ?? "";
