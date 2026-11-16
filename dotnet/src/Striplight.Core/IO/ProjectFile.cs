@@ -95,6 +95,11 @@ public static class ProjectFile
           .Append($" ArchiveList=\"{X(EncodeSlfText(r.ArchiveList))}\"")
           .Append($" ReportMicrofilm=\"{X(r.ReportMicrofilm)}\" />").Append(NL);
 
+        if (!string.IsNullOrEmpty(r.StriplightState))
+        {
+            string state = r.StriplightState.Replace("]]>", "]]]]><![CDATA[>");
+            sb.Append("  <StriplightState Format=\"json\"><![CDATA[").Append(state).Append("]]></StriplightState>").Append(NL);
+        }
         if (!string.IsNullOrEmpty(p.Notes))
         {
             // CDATA keeps Markdown readable in the file; "]]>" has to be split across sections.
@@ -255,6 +260,7 @@ public static class ProjectFile
             roll.ExportEncoder = XmlAttr.Int(s, "ExportEncoder", roll.ExportEncoder);
         }
         project.Notes = rollNode.Element("StriplightNotes")?.Value ?? "";
+        project.Roll.StriplightState = rollNode.Element("StriplightState")?.Value ?? "";
 
         roll.Normalise();
 

@@ -64,6 +64,11 @@ public sealed class RollData
     public string ArchiveList { get; set; } = "";
     /// <summary>Microfilm numbers for the handover report (default: the project folder name).</summary>
     public string ReportMicrofilm { get; set; } = "";
+    /// <summary>
+    /// Striplight PRO project state as JSON (export folder and options, orientation, size check,
+    /// every panel field): saved as &lt;StriplightState&gt; so a reopened project is exactly as left.
+    /// </summary>
+    public string StriplightState { get; set; } = "";
     public bool ExportGrayscale { get; set; } = true;
     public bool ExportProgressive { get; set; }
     public int ExportEncoder { get; set; } = Model.ExportEncoder.TurboJpeg;

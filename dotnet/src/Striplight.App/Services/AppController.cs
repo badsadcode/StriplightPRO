@@ -49,6 +49,8 @@ public sealed class AppController
     /// <summary>After Stop: what Continue needs (the original options, the next strip, the open frame).</summary>
     private sealed record DetectResume(RollData Roll, DetectOptions Options, int NextStrip, FrameRecord? OpenFrame, long ReplaceFrom);
     private DetectResume? _detectResume;
+    /// <summary>Panel fields of the open project (from the page; saved in the .slf).</summary>
+    private JsonElement? _panels;
     private CancellationTokenSource? _exportCts;
     private ExportEngine? _exportEngine;
 
@@ -234,7 +236,23 @@ public sealed class AppController
             _settings.SizeUnderPercent = Math.Clamp(BridgeHost.Arg(args, "underPercent", 50), 0, 99);
             FrameEditor.SetSizeRules(_settings.SizeOverOn, _settings.SizeOverPercent, _settings.SizeUnderOn, _settings.SizeUnderPercent);
             FrameEditor.Refresh(_project.Frames);
+            if (_project.Roll.Loaded && BridgeHost.Arg(args, "user", true)) MarkDirty();
             return _project.Frames;
+        });
+        // Panel fields of the page: part of the project, saved in the .slf.
+        _bridge.On("project.panels", args =>
+        {
+            if (!_project.Roll.Loaded) return null;
+            var state = BridgeHost.Arg<JsonElement?>(args, "state", null);
+            if (state is null) return null;
+            string next = state.Value.GetRawText();
+            if (_panels?.GetRawText() != next)
+            {
+                bool first = _panels is null;
+                _panels = state.Value.Clone();
+                if (!first || BridgeHost.Arg(args, "user", false)) MarkDirty();
+            }
+            return null;
         });
         _bridge.On("frames.setOverride", args =>
         {
@@ -449,6 +467,7 @@ public sealed class AppController
             bool rotate = BridgeHost.Arg(args, "rotateCw", _settings.RotateCw);
             if (rotate != _settings.RotateCw)
             {
+                if (_project.Roll.Loaded) MarkDirty();
                 _imageVersion++;
                 _bridge.Emit("images.changed", new { imageVersion = _imageVersion });
             }
@@ -469,7 +488,9 @@ public sealed class AppController
         });
         _bridge.On("export.settings", args =>
         {
-            _export = BridgeHost.Args<ExportDto>(args);
+            var next = BridgeHost.Args<ExportDto>(args);
+            if (_project.Roll.Loaded && ExportKey(next) != ExportKey(_export)) MarkDirty();
+            _export = next;
             StoreExportToRollAndSettings();
             _bridge.Emit("export.changed", null); // the preview's target banner follows naming changes
             return null;
@@ -653,7 +674,13 @@ public sealed class AppController
     private SessionDto Session() => new(
         _project.Roll, _project.Frames, _project.Notes, _projectPath, _idfPath,
         ExportNaming.DefaultOutputRoot(ProjectRootPath, _project.Roll),
-        _process, _export, _imageVersion, _dirty);
+        _process, _export, _imageVersion, _dirty, _settings.RotateCw,
+        new SizeRulesDto
+        {
+            OverOn = _settings.SizeOverOn, OverPercent = _settings.SizeOverPercent,
+            UnderOn = _settings.SizeUnderOn, UnderPercent = _settings.SizeUnderPercent,
+        },
+        _panels);
 
     private string ProjectRootPath => _projectPath != "" ? _projectPath : _idfPath;
 
@@ -724,11 +751,136 @@ public sealed class AppController
         _dirty = false;
         _process = ProcessDto.FromRoll(project.Roll);
         _export = ExportFromSettings(project.Roll);
+        _panels = null;
+        RestoreState(project.Roll);
         _imageVersion++;
         _settings.LastFolder = Path.GetDirectoryName(Path.GetFullPath(path)) ?? "";
         _settings.AddRecent(path);
         _settings.Save();
         return Session();
+    }
+
+    /// <summary>Everything of the project into the roll: tone attributes and the &lt;StriplightState&gt; block.</summary>
+    private void WriteStateToRoll()
+    {
+        _process.StoreTo(_project.Roll);
+        StoreExportToRollAndSettings();
+        _project.Roll.StriplightState = JsonSerializer.Serialize(new ProjectState
+        {
+            Process = _process,
+            Export = ExportForState(),
+            RotateCw = _settings.RotateCw,
+            Size = new SizeRulesDto
+            {
+                OverOn = _settings.SizeOverOn, OverPercent = _settings.SizeOverPercent,
+                UnderOn = _settings.SizeUnderOn, UnderPercent = _settings.SizeUnderPercent,
+            },
+            Panels = _panels,
+        }, BridgeHost.Json);
+    }
+
+    /// <summary>
+    /// CI smoke test: set non-default project values, save an .slf, forget them, reopen it and
+    /// check that everything came back (export folder and options, orientation, CW, size check,
+    /// panel fields, microfilm number).
+    /// </summary>
+    public object SmokeStateRoundTrip(string dir)
+    {
+        string slf = Path.Combine(dir, "state-roundtrip.slf");
+        bool cw0 = _settings.RotateCw;
+        _export.OutputRoot = @"X:\smoke\out"; _export.Prefix = "smk_"; _export.FileDigits = 7; _export.SeparateFolders = false;
+        _export.Quality = 91; _export.NamingMode = 1; _export.ArchiveList = ";1;2;3;4;5"; _export.LocalTempStage = true;
+        _process.Rotation = 90; _process.Mirror = true; _process.Negative = true; _process.PreviewOnStrips = false; _process.Gamma = 150;
+        _settings.RotateCw = !cw0;
+        _settings.SizeOverPercent = 33; _settings.SizeUnderOn = false;
+        _panels = JsonDocument.Parse("{\"det-threshold\":\"123\",\"trim-top\":\"77\",\"det-adv\":true}").RootElement.Clone();
+        _project.Roll.ReportMicrofilm = "123-213; 400";
+        WriteStateToRoll();
+        string sourceIdf = _idfPath != "" ? _idfPath : _project.SourceIdfPath;
+        ProjectFile.SaveSlf(slf, sourceIdf, _project);
+
+        // Forget all of it, then open the saved project.
+        _export = new ExportDto(); _process = new ProcessDto(); _panels = null;
+        _settings.RotateCw = cw0; _settings.SizeOverPercent = 50; _settings.SizeUnderOn = true;
+        _dirty = false;
+        OpenProject(slf);
+
+        var checks = new Dictionary<string, bool>
+        {
+            ["outputRoot"] = _export.OutputRoot == @"X:\smoke\out",
+            ["prefix"] = _export.Prefix == "smk_",
+            ["digits"] = _export.FileDigits == 7,
+            ["separateFolders"] = !_export.SeparateFolders,
+            ["quality"] = _export.Quality == 91,
+            ["localTemp"] = _export.LocalTempStage,
+            ["namingMode"] = _export.NamingMode == 1,
+            ["archiveList"] = _export.ArchiveList.Trim() == ";1;2;3;4;5",
+            ["rotation"] = _process.Rotation == 90,
+            ["mirror"] = _process.Mirror,
+            ["negative"] = _process.Negative,
+            ["previewOnStrips"] = !_process.PreviewOnStrips,
+            ["gamma"] = _process.Gamma == 150,
+            ["rotateCw"] = _settings.RotateCw == !cw0,
+            ["sizeOver"] = _settings.SizeOverPercent == 33,
+            ["sizeUnderOff"] = !_settings.SizeUnderOn,
+            ["panels"] = _panels is { } pn && pn.GetProperty("trim-top").GetString() == "77" && pn.GetProperty("det-adv").GetBoolean(),
+            ["microfilm"] = _project.Roll.ReportMicrofilm == "123-213; 400",
+        };
+        // Leave the machine's own settings as they were.
+        _settings.RotateCw = cw0; _settings.SizeOverPercent = 50; _settings.SizeUnderOn = true;
+        FrameEditor.SetSizeRules(true, 50, true, 50);
+        return new { ok = checks.Values.All(v => v), checks };
+    }
+
+    private ExportDto ExportForState()
+    {
+        var e = JsonSerializer.Deserialize<ExportDto>(JsonSerializer.Serialize(_export, BridgeHost.Json), BridgeHost.Json)!;
+        e.Scope = "all";
+        e.Indices = [];
+        return e;
+    }
+
+    private static string ExportKey(ExportDto e)
+    {
+        var copy = JsonSerializer.Deserialize<ExportDto>(JsonSerializer.Serialize(e, BridgeHost.Json), BridgeHost.Json)!;
+        copy.Scope = "all"; copy.Indices = [];
+        return JsonSerializer.Serialize(copy, BridgeHost.Json);
+    }
+
+    /// <summary>
+    /// Puts back what the project was saved with: export folder and options, orientation, CW,
+    /// size check and panel fields. Older .slf files without the block keep today's defaults.
+    /// </summary>
+    private void RestoreState(RollData roll)
+    {
+        if (string.IsNullOrWhiteSpace(roll.StriplightState)) return;
+        ProjectState? state;
+        try { state = JsonSerializer.Deserialize<ProjectState>(roll.StriplightState, BridgeHost.Json); }
+        catch (JsonException) { return; }
+        if (state is null) return;
+        if (state.Process is { } p)
+        {
+            // Tone values in the attributes stay the source of truth (QuantumScan / Lazarus edit them too).
+            p.Method = roll.AdjustMethod; p.Flags = roll.AdjustFlags; p.Contrast = roll.AdjustContrast;
+            p.Brightness = roll.AdjustBrightness; p.Gamma = roll.AdjustGamma; p.Strength = roll.AdjustStrength;
+            p.Sharpness = roll.Sharpness; p.SharpnessMode = roll.SharpnessMode;
+            _process = p;
+        }
+        if (state.Export is { } e)
+        {
+            e.NamingMode = roll.ExportNamingMode; e.ArchiveList = roll.ArchiveList; e.Progressive = roll.ExportProgressive;
+            e.Scope = "all"; e.Indices = [];
+            _export = e;
+        }
+        if (state.RotateCw is bool cw) _settings.RotateCw = cw;
+        if (state.Size is { } z)
+        {
+            _settings.SizeOverOn = z.OverOn; _settings.SizeOverPercent = Math.Clamp(z.OverPercent, 0, 200);
+            _settings.SizeUnderOn = z.UnderOn; _settings.SizeUnderPercent = Math.Clamp(z.UnderPercent, 0, 99);
+            FrameEditor.SetSizeRules(z.OverOn, z.OverPercent, z.UnderOn, z.UnderPercent);
+            FrameEditor.Refresh(_project.Frames);
+        }
+        if (state.Panels is { } panels) _panels = panels.Clone();
     }
 
     private ExportDto ExportFromSettings(RollData roll) => new()
@@ -779,7 +931,7 @@ public sealed class AppController
             target = dlg.FileName;
         }
 
-        _process.StoreTo(_project.Roll);
+        WriteStateToRoll();
         string sourceIdf = _idfPath != "" ? _idfPath : _project.SourceIdfPath;
         if (Path.GetExtension(target).Equals(".qpf", StringComparison.OrdinalIgnoreCase))
         {

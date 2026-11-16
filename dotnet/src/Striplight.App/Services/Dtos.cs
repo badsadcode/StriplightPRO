@@ -46,6 +46,26 @@ public sealed class ProcessDto
     }
 }
 
+/// <summary>Everything of a project the .slf attributes do not hold (saved as &lt;StriplightState&gt;).</summary>
+public sealed class ProjectState
+{
+    public int Version { get; set; } = 1;
+    public ProcessDto? Process { get; set; }
+    public ExportDto? Export { get; set; }
+    public bool? RotateCw { get; set; }
+    public SizeRulesDto? Size { get; set; }
+    /// <summary>Panel fields of the page (detection, suggestions, repair, trim…), id → value.</summary>
+    public System.Text.Json.JsonElement? Panels { get; set; }
+}
+
+public sealed class SizeRulesDto
+{
+    public bool OverOn { get; set; } = true;
+    public int OverPercent { get; set; } = 50;
+    public bool UnderOn { get; set; } = true;
+    public int UnderPercent { get; set; } = 50;
+}
+
 /// <summary>Export tab state.</summary>
 public sealed class ExportDto
 {
@@ -119,4 +139,7 @@ public sealed record SessionDto(
     ProcessDto Process,
     ExportDto Export,
     int ImageVersion,
-    bool Dirty);
+    bool Dirty,
+    bool RotateCw,
+    SizeRulesDto Size,
+    System.Text.Json.JsonElement? Panels);

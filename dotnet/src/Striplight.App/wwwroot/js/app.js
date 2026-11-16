@@ -156,6 +156,14 @@ function applySession(s) {
   reportMfTyped = false;
   $('#report-modal').hidden = true;
   loadExport(s.export, s.defaultOutputRoot);
+  // Saved project state: CW orientation, size check and every panel field.
+  if (s.rotateCw !== undefined && $('#rotate-cw').checked !== s.rotateCw) {
+    $('#rotate-cw').checked = s.rotateCw;
+    view.setView({ rotateCw: s.rotateCw });
+  }
+  if (s.size) loadSizeRules({ sizeOverOn: s.size.overOn, sizeOverPercent: s.size.overPercent, sizeUnderOn: s.size.underOn, sizeUnderPercent: s.size.underPercent });
+  if (s.panels) applyPanels(s.panels);
+  else sendPanels(false);   // a project without saved panel state takes today's values (not marked unsaved)
   refreshOverlays();
   setNotes(s.notes);
   refreshFramesPanel();
@@ -164,6 +172,58 @@ function applySession(s) {
   scrubber.invalidate();
   status(t('Opened {file}', { file: fileName(s.projectPath || s.idfPath) }));
   $('#strip-canvas').focus();
+}
+
+// ------------------------------------------------------------------ project panel state
+// Every panel field of a project is saved in its .slf (via the host) and comes back on open,
+// so a reopened project is exactly as it was left — not reset to defaults.
+const PANEL_FIELDS = [
+  // detection
+  '#det-threshold', '#det-minw', '#det-minl', '#det-tone', '#det-live', '#det-auto', '#det-invert', '#det-adv',
+  '#det-minrun', '#det-maxlen', '#det-touchw', '#det-touchl', '#det-osw', '#det-osl',
+  '#det-scope', '#det-from', '#det-to', '#det-left', '#det-right', '#det-area',
+  // folder-marker suggestions
+  '#sug-num', '#sug-before', '#sug-every',
+  // frames: split, repair, expand, trim, per-frame orientation
+  '#split-parts', '#split-preview', '#join-gap', '#join-show', '#ex-l', '#ex-r', '#ex-t', '#ex-b',
+  '#trim-show', '#trim-top', '#trim-bottom', '#ovr-rotation', '#ovr-mirror', '#ovr-negative',
+];
+let applyingPanels = false;
+
+function gatherPanels() {
+  const o = {};
+  for (const id of PANEL_FIELDS) {
+    const el = $(id);
+    if (!el) continue;
+    o[id.slice(1)] = el.type === 'checkbox' ? el.checked : String(el.value);
+  }
+  return o;
+}
+
+function applyPanels(state) {
+  if (!state) return;
+  applyingPanels = true;
+  try {
+    for (const id of PANEL_FIELDS) {
+      const el = $(id), v = state[id.slice(1)];
+      if (!el || v === undefined) continue;
+      if (el.type === 'checkbox') el.checked = !!v; else el.value = v;
+    }
+    $('#det-adv-box').hidden = !$('#det-adv').checked;
+    setStrictness($('#sug-num').value);
+    refreshSplitPreview();
+    refreshOverlays();
+  } finally { applyingPanels = false; }
+}
+
+const sendPanels = debounce((user) => {
+  if (!hasRoll() || applyingPanels) return;
+  call('project.panels', { state: gatherPanels(), user }).catch(() => {});
+}, 400);
+for (const id of PANEL_FIELDS) {
+  const el = $(id);
+  if (!el) continue;
+  el.addEventListener(el.matches('.seg') ? 'change' : el.type === 'checkbox' ? 'change' : 'input', () => { if (!applyingPanels) sendPanels(true); });
 }
 
 function refreshRollMeta() {
@@ -363,7 +423,7 @@ function loadSizeRules(s) {
 }
 const sendSizeRules = debounce(async () => {
   if (!hasRoll()) { call('frames.sizeRules', sizeRules()).catch(() => {}); return; }
-  const r = await call('frames.sizeRules', sizeRules()).catch((e) => { toast(e.message, 'error'); return null; });
+  const r = await call('frames.sizeRules', { ...sizeRules(), user: true }).catch((e) => { toast(e.message, 'error'); return null; });
   if (r) applyFrames(r);
 }, 150);
 function refreshSizeHint() {
@@ -503,6 +563,7 @@ async function applyTrim() {
   $('#trim-top').value = $('#trim-bottom').value = 0;   // like Lazarus: lines reset after apply
   view.trim.top = view.trim.bottom = 0;
   view.invalidate();
+  sendPanels(true);
 }
 
 async function selectSection(idx) {
@@ -532,6 +593,7 @@ function setDetectRange(which, strip) {
   $(which === 'from' ? '#det-from' : '#det-to').value = strip + 1;
   $('#det-scope').value = 'range';
   refreshOverlays();
+  sendPanels(true);
   showTab('detect');
   toast(t(which === 'from' ? 'Detection starts at strip {n}' : 'Detection ends at strip {n}', { n: strip + 1 }));
 }
@@ -553,6 +615,7 @@ function refreshOverlays() {
 function overlayChanged(layer, side, v) {
   const id = layer === 'trim' ? (side === 'top' ? '#trim-top' : '#trim-bottom') : (side === 'top' ? '#det-left' : '#det-right');
   $(id).value = v;
+  sendPanels(true);
 }
 
 ['#trim-show', '#trim-top', '#trim-bottom', '#det-area', '#det-left', '#det-right', '#det-from', '#det-to', '#join-show', '#join-gap']
@@ -590,7 +653,7 @@ function setStrictness(v) {
 }
 // Like Lazarus: moving the slider re-runs the suggestion when suggestions are showing.
 const resuggest = debounce(() => { if (view.frames.some((f) => f.isSuggested)) suggest(0); }, 250);
-$('#sug-range').addEventListener('input', (e) => { setStrictness(e.target.value); resuggest(); });
+$('#sug-range').addEventListener('input', (e) => { setStrictness(e.target.value); resuggest(); sendPanels(true); });
 $('#sug-num').addEventListener('change', (e) => { setStrictness(e.target.value); resuggest(); });
 $('#sug-before').addEventListener('change', resuggest);
 
@@ -1287,6 +1350,7 @@ const commands = {
     $('#det-touchl').value = hasRoll() ? Math.floor(state.session.roll.lengthLines / 64) : 64;
     $('#det-auto').checked = $('#det-invert').checked = false;
     saveDetectOptions();
+    sendPanels(true);
     toast(t('Detection settings back to defaults'));
   },
   toneReset: () => {

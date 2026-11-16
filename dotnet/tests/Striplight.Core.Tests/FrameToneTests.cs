@@ -63,4 +63,24 @@ public class FrameToneTests
         Assert.False(loaded.Frames[0].HasToneOverride);
         Assert.Equal(own, FrameBuilder.Resolve(loaded.Frames[1], Global(ToneSettings.Neutral)).Tone);
     }
+
+    [Fact]
+    public void ProjectStateBlockSurvivesSaveAndLoad()
+    {
+        using var t = new TempDir();
+        File.WriteAllText(t.File("roll.idf"), ProjectFileTests.Idf);
+        IdfParser.Parse(t.File("roll.idf"), out var roll, out var frames);
+        roll.StriplightState = "{\"export\":{\"outputRoot\":\"D:\\\\out\",\"prefix\":\"a]]>b\"},\"rotateCw\":true}";
+        roll.ReportMicrofilm = "123-213; 400";
+        string slf = t.File("roll.slf");
+        ProjectFile.SaveSlf(slf, t.File("roll.idf"), new Project { Roll = roll, Frames = frames });
+        Assert.True(ProjectFile.TryLoadProject(slf, out var loaded));
+        Assert.Equal(roll.StriplightState, loaded.Roll.StriplightState);   // "]]>" inside survives the CDATA
+        Assert.Equal("123-213; 400", loaded.Roll.ReportMicrofilm);
+
+        // QPF (QuantumScan) never carries it
+        string qpf = t.File("roll.qpf");
+        ProjectFile.SaveQpf(qpf, t.File("roll.idf"), new Project { Roll = roll, Frames = frames });
+        Assert.DoesNotContain("StriplightState", File.ReadAllText(qpf));
+    }
 }

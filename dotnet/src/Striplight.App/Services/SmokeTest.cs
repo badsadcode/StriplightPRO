@@ -72,6 +72,13 @@ public sealed class SmokeTest(string outputDir)
             Log("export " + JsonSerializer.Serialize(export, BridgeHost.Json));
             if (export.Failed > 0 || export.Exported == 0) Fail("export failed");
 
+            // The .slf keeps the complete project state: save, forget, reopen, compare.
+            var state = controller.SmokeStateRoundTrip(OutputDir);
+            result["stateRoundTrip"] = state;
+            string stateJson = JsonSerializer.Serialize(state, BridgeHost.Json);
+            Log("state round trip " + stateJson);
+            if (!stateJson.Contains("\"ok\":true")) Fail("project state did not survive save and reopen");
+
             result["jsErrors"] = controller.JsErrors;
             if (controller.JsErrors.Count > 0) Fail("JavaScript errors: " + string.Join(" | ", controller.JsErrors));
         }
