@@ -1,12 +1,13 @@
 {
   "name": "striplight-web-vendor",
   "private": true,
-  "description": "Builds the vendored TOAST UI Editor (with its ProseMirror dependencies) into wwwroot/vendor/toastui. Only needed when updating the editor; the built files are committed.",
+  "description": "Builds the vendored front-end assets: TOAST UI Editor (with ProseMirror) into wwwroot/vendor/toastui and the Lucide icons into wwwroot/js/icons.js. Only needed when updating them; the built files are committed.",
   "scripts": {
-    "build": "node build.mjs"
+    "build": "node build.mjs && node build-icons.mjs"
   },
   "dependencies": {
-    "@toast-ui/editor": "3.2.2"
+    "@toast-ui/editor": "3.2.2",
+    "lucide-static": "0.544.0"
   },
   "devDependencies": {
     "esbuild": "0.25.10"

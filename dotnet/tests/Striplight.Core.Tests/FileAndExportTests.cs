@@ -237,3 +237,26 @@ public class TurboJpegPipelineTests
         Assert.Equal(1, again.Skipped);
     }
 }
+
+public class DemoRollTests
+{
+    [Fact]
+    public void DemoRollOpensAndExports()
+    {
+        if (!TurboJpeg.IsAvailable) return;
+        using var t = new TempDir();
+        string idf = Striplight.Core.Demo.DemoRoll.Create(t.Path);
+        Assert.Equal(IdfParseResult.Ok, IdfParser.Parse(idf, out var roll, out var frames));
+        Assert.Equal(Striplight.Core.Demo.DemoRoll.StripCount, roll.StripCount);
+        Assert.True(frames.Count > 20);
+        Assert.Contains(frames, f => f.SpansStrips(roll.LengthLines));
+
+        // Detection on the previews finds roughly the same pages.
+        var found = FrameDetector.Detect(roll, new DetectOptions { StripFrom = 0, StripTo = roll.StripCount - 1, Threshold = 60, MergeAcrossGaps = roll.LengthLines / 64 },
+            i => TurboJpeg.DecodeFile(RollPaths.PreviewFilePath(roll, i), TurboJpeg.PixelFormatBgra));
+        Assert.InRange(found.Count, frames.Count - 3, frames.Count + 3);
+
+        var img = new FrameBuilder(roll, new ProcessSettings(), new GrayStripCache(4)).Build(frames[3]);
+        Assert.Equal(frames[3].Height, img.Width);
+    }
+}

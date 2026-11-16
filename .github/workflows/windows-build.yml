@@ -1,0 +1,82 @@
+# Builds Striplight PRO (dotnet/) on Windows, runs the engine tests, publishes the
+# exes and runs a smoke test of the real app (WebView2 UI, demo roll, frame preview,
+# export). Download the exes from the run's "Artifacts" section.
+name: Windows build
+
+on:
+  push:
+    paths:
+      - 'dotnet/**'
+      - '.github/workflows/windows-build.yml'
+  pull_request:
+    paths:
+      - 'dotnet/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: dotnet
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Engine tests
+        run: dotnet test tests/Striplight.Core.Tests -c Release
+
+      - name: Publish single-file exe (self-contained, no install needed)
+        run: >
+          dotnet publish src/Striplight.App -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeAllContentForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true -p:DebugType=none -o out/single
+
+      - name: Publish folder build (needs the .NET 10 Desktop Runtime)
+        run: >
+          dotnet publish src/Striplight.App -c Release -r win-x64 --self-contained false
+          -p:DebugType=none -o out/folder
+
+      - name: Smoke test the real app
+        run: |
+          $out = Join-Path $pwd 'out/smoke'
+          $p = Start-Process -FilePath out/single/StriplightPRO.exe -ArgumentList '--smoke', "`"$out`"" -PassThru
+          if (-not $p.WaitForExit(240000)) { $p.Kill(); throw 'Smoke test timed out' }
+          if (Test-Path "$out/smoke.json") { Get-Content "$out/smoke.json" } else { Write-Host 'smoke.json missing' }
+          Write-Host "Exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { throw "Smoke test failed with exit code $($p.ExitCode)" }
+
+      - name: Screenshot (base64, for reading from the log)
+        if: always()
+        run: |
+          $f = 'out/smoke/01-main.jpg.b64'
+          if (Test-Path $f) { Write-Host '----BEGIN SCREENSHOT----'; Get-Content $f; Write-Host '----END SCREENSHOT----' }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StriplightPRO-win-x64-single-exe
+          path: dotnet/out/single/StriplightPRO.exe
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StriplightPRO-win-x64-folder
+          path: dotnet/out/folder/
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-test-results
+          path: |
+            dotnet/out/smoke/*.png
+            dotnet/out/smoke/smoke.json
+          if-no-files-found: ignore

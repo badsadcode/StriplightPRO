@@ -1,13 +1,26 @@
-// Striplight PRO — page controller. Wires the toolbar, side panels, strip view and
-// frame preview to the .NET host through the bridge. The host owns the project; this
-// page keeps a copy of the frame list for drawing and sends every edit back.
+// Striplight PRO — page controller. Wires the app bar, tool rail, inspector panels,
+// strip view and frame preview to the .NET host through the bridge. The host owns the
+// project; this page keeps a copy of the frame list for drawing and sends every edit back.
 
 import { call, on, inHost } from './bridge.js';
 import { StripView, hasTone } from './stripView.js';
 import { initNotes, setNotes, flushNotes } from './notes.js';
+import { hydrateIcons } from './icons.js';
+import { initSegmented, initRanges, paintRange } from './ui.js';
+import { Scrubber } from './scrubber.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+
+hydrateIcons();
+initSegmented($('#ovr-rotation'));
+initSegmented($('#proc-rotation'));
+initRanges();
+
+// Report script errors to the host (shown in the smoke test, harmless otherwise).
+window.addEventListener('error', (e) => {
+  if (inHost) call('app.log', { message: `${e.message} @ ${e.filename}:${e.lineno}` }).catch(() => {});
+});
 
 // ------------------------------------------------------------------ state
 
@@ -18,11 +31,12 @@ const state = {
   detecting: false,
   exporting: false,
   exportPaused: false,
+  smoke: false,
 };
 
 const view = new StripView($('#strip-canvas'), {
-  onSelectionChanged: () => refreshFramesPanel(),
-  onPageChanged: () => refreshPager(),
+  onSelectionChanged: () => { refreshFramesPanel(); scrubber.invalidate(); },
+  onPageChanged: () => { refreshPager(); scrubber.invalidate(); },
   onHover: (t) => { $('#status-hover').textContent = t; },
   onFramesEdited: (indices) => patchFrames(indices),
   onFrameCreated: (frame) => addFrame(frame),
@@ -31,6 +45,7 @@ const view = new StripView($('#strip-canvas'), {
   onDismissMenus: () => hideContextMenu(),
   onZoomRequest: (z) => setZoom(z),
 });
+const scrubber = new Scrubber($('#scrubber'), view);
 
 // ------------------------------------------------------------------ helpers
 
@@ -43,6 +58,10 @@ function toast(message, kind = '') {
 }
 
 function status(text) { $('#status-main').textContent = text; }
+
+function setBusy() {
+  document.querySelector('.statusbar').classList.toggle('busy', state.detecting || state.exporting);
+}
 
 /** Runs a host command and shows failures as an error toast. */
 async function run(cmd, args) {
@@ -59,9 +78,14 @@ function debounce(fn, ms) {
   return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
 }
 
+function setBar(id, done, total) {
+  $(id).style.width = `${total > 0 ? Math.min(100, (done / total) * 100) : 0}%`;
+}
+
 const hasRoll = () => !!state.session;
 const selection = () => [...view.selected].sort((a, b) => a - b);
 const frameKey = (f) => `${f.leadEdge}:${f.trailEdge}:${f.leftEdge}:${f.rightEdge}`;
+const fileName = (p) => (p || '').split(/[\\/]/).pop();
 
 function setDirty(d) {
   if (state.session) state.session.dirty = d;
@@ -77,6 +101,7 @@ function refreshEnabled() {
   $('#exp-start').disabled = !roll || state.exporting;
   $('#exp-pause').disabled = !state.exporting;
   $('#exp-stop').disabled = !state.exporting;
+  setBusy();
 }
 
 // ------------------------------------------------------------------ session
@@ -87,9 +112,12 @@ function applySession(s) {
   view.imageVersion = s.imageVersion;
   view.setRoll(s.roll, s.frames);
   $('#empty-state').hidden = true;
-  $('#legend').hidden = false;
+  $('#viewbar').hidden = false;
+  $('#viewer-foot').hidden = false;
   $('.roll-name').textContent = s.roll.rollName || 'Untitled roll';
   $('.roll-name').title = s.projectPath || s.idfPath || '';
+  $('#roll-meta').hidden = false;
+  refreshRollMeta();
   setDirty(s.dirty);
 
   // Detect defaults from the roll
@@ -106,13 +134,29 @@ function applySession(s) {
   refreshFramesPanel();
   refreshPager();
   refreshEnabled();
-  status(`${s.roll.stripCount.toLocaleString()} strips · ${s.frames.length.toLocaleString()} frames · ${s.projectPath || s.idfPath}`);
+  scrubber.invalidate();
+  status(`Opened ${fileName(s.projectPath || s.idfPath)}`);
   $('#strip-canvas').focus();
+}
+
+function refreshRollMeta() {
+  if (!state.session) return;
+  const r = state.session.roll;
+  $('#roll-meta').textContent = `${r.stripCount.toLocaleString()} strips · ${view.frames.length.toLocaleString()} frames`;
 }
 
 async function openProject(path = '') {
   const s = await run('project.open', { path });
   if (s) applySession(s);
+}
+
+async function openDemo() {
+  status('Preparing the demo roll…');
+  const s = await run('project.demo');
+  if (s) {
+    applySession(s);
+    toast('Demo roll opened. Try Detect, Adjust and Export, or drag frames around.', 'ok');
+  }
 }
 
 async function save(as = false) {
@@ -125,18 +169,26 @@ async function save(as = false) {
     setDirty(false);
     state.session.projectPath = r.path;
     $('.roll-name').title = r.path;
-    toast(`Saved ${r.path.split(/[\\/]/).pop()}`, 'ok');
+    toast(`Saved ${fileName(r.path)}`, 'ok');
   }
 }
 
 function renderRecent() {
   const list = $('#recent-list');
   list.replaceChildren();
-  for (const p of state.settings?.recentProjects || []) {
+  const items = state.settings?.recentProjects || [];
+  $('#recent-wrap').hidden = items.length === 0;
+  for (const p of items) {
     const li = document.createElement('li');
     const b = document.createElement('button');
-    b.textContent = p;
+    const name = document.createElement('span');
+    name.className = 'r-name';
+    name.textContent = fileName(p);
+    const path = document.createElement('span');
+    path.className = 'r-path';
+    path.textContent = p;
     b.title = p;
+    b.append(name, path);
     b.addEventListener('click', () => openProject(p));
     li.append(b);
     list.append(li);
@@ -153,6 +205,8 @@ function applyFrames(frames, keepKeys) {
   frames.forEach((f, i) => { if (keys.has(frameKey(f))) keep.push(i); });
   view.setFrames(frames, keep);
   refreshFramesPanel();
+  refreshRollMeta();
+  scrubber.invalidate();
 }
 
 async function patchFrames(indices) {
@@ -182,7 +236,7 @@ async function deleteSelected() {
   if (n > 20 && !confirm(`Delete ${n} frames?`)) return;
   const r = await run('frames.delete', { indices: selection() });
   applyFrames(r, []);
-  status(`Deleted ${n} frame${n === 1 ? '' : 's'}.`);
+  status(`Deleted ${n} frame${n === 1 ? '' : 's'}`);
 }
 
 function nextAbnormal() {
@@ -197,7 +251,7 @@ function nextAbnormal() {
       return;
     }
   }
-  toast('No odd-size frames.');
+  toast('No odd-size frames on this roll.');
 }
 
 function refreshFramesPanel() {
@@ -209,19 +263,34 @@ function refreshFramesPanel() {
   refreshEnabled();
 
   const sel = selection();
-  const info = $('#frame-info');
-  if (sel.length !== 1) { info.textContent = ''; return; }
+  const card = $('#frame-info');
+  if (sel.length !== 1) { card.hidden = true; return; }
   const i = sel[0], f = frames[i], ll = state.session.roll.lengthLines;
-  const lines = [
-    `Frame ${i + 1} of ${frames.length}`,
-    `Lead / trail   ${f.leadEdge} – ${f.trailEdge}  (strips ${Math.floor(f.leadEdge / ll) + 1}–${Math.floor(f.trailEdge / ll) + 1})`,
-    `Left / right   ${f.leftEdge} – ${f.rightEdge}`,
-    `Size           ${f.trailEdge - f.leadEdge} × ${f.rightEdge - f.leftEdge} px`,
+  const rows = [
+    ['Lead → trail', `${f.leadEdge.toLocaleString()} → ${f.trailEdge.toLocaleString()}`],
+    ['Strips', `${Math.floor(f.leadEdge / ll) + 1} – ${Math.floor(f.trailEdge / ll) + 1}`],
+    ['Left → right', `${f.leftEdge} → ${f.rightEdge}`],
+    ['Size', `${f.trailEdge - f.leadEdge} × ${f.rightEdge - f.leftEdge} px`],
   ];
-  if (f.isMarker) lines.push('Folder marker');
-  if (f.hasOverride) lines.push(`Own orientation: ${f.rotation}°${f.flipH ? ', mirrored' : ''}${f.negative ? ', negative' : ''}`);
-  if (hasTone(f)) lines.push('Own tone values (from QuantumScan / Lazarus edition)');
-  info.textContent = lines.join('\n');
+  if (f.hasOverride) rows.push(['Orientation', `${f.rotation}°${f.flipH ? ' · mirrored' : ''}${f.negative ? ' · negative' : ''}`]);
+  if (hasTone(f)) rows.push(['Tone', 'own values (from file)']);
+  card.replaceChildren();
+  const title = document.createElement('div');
+  title.className = 'fc-title';
+  title.textContent = `Frame ${i + 1} of ${frames.length}`;
+  if (f.isMarker) {
+    const chip = document.createElement('span');
+    chip.className = 'chip chip-warn';
+    chip.textContent = 'Folder start';
+    title.append(chip);
+  }
+  card.append(title);
+  for (const [k, v] of rows) {
+    const dt = document.createElement('dt'); dt.textContent = k;
+    const dd = document.createElement('dd'); dd.textContent = v;
+    card.append(dt, dd);
+  }
+  card.hidden = false;
   updateExportExample();
 }
 
@@ -243,7 +312,9 @@ const sendView = debounce(async () => {
 }, 200);
 
 function setZoom(z) {
+  z = Math.max(0.25, Math.min(4, z));
   $('#zoom').value = Math.round(z * 100);
+  paintRange($('#zoom'));
   $('#zoom-out').textContent = `${Math.round(z * 100)}%`;
   view.setView({ zoom: z });
   sendView();
@@ -257,25 +328,24 @@ $('#strips-per-row').addEventListener('change', (e) => {
 $('#rotate-cw').addEventListener('change', sendView);
 $('#page-input').addEventListener('change', (e) => view.gotoPage((Number(e.target.value) || 1) - 1));
 
-// ------------------------------------------------------------------ process panel
+// ------------------------------------------------------------------ adjust panel
 
 const QUANTUM = { contrast: [-128, 255, 64], brightness: [-128, 127, 0], gamma: [-255, 255, 0] };
 const STRIPLIGHT = { contrast: [-100, 100, 0], brightness: [-100, 100, 0], gamma: [10, 300, 100] };
 const isQuantum = (m) => m === 1 || m === 4;
 const isAdaptive = (m) => m >= 5 && m <= 8;
 
-function slider(key) { return $(`.slider[data-key="${key}"]`); }
+const slider = (key) => $(`.slider[data-key="${key}"]`);
+const sliderInputs = (el) => [el.querySelector('input[type=range]'), el.querySelector('input[type=number]')];
 
 function setSlider(key, value, range) {
-  const el = slider(key);
-  const [r, n] = el.querySelectorAll('input');
-  if (range) {
-    for (const i of [r, n]) { i.min = range[0]; i.max = range[1]; }
-  }
+  const [r, n] = sliderInputs(slider(key));
+  if (range) for (const i of [r, n]) { i.min = range[0]; i.max = range[1]; }
   r.value = n.value = value;
+  paintRange(r);
 }
 
-function getSlider(key) { return Number(slider(key).querySelector('input[type=number]').value) || 0; }
+function getSlider(key) { return Number(sliderInputs(slider(key))[1].value) || 0; }
 
 function applyRanges(method, resetValues) {
   const ranges = isQuantum(method) ? QUANTUM : STRIPLIGHT;
@@ -284,7 +354,7 @@ function applyRanges(method, resetValues) {
   }
   slider('strength').hidden = !isAdaptive(method);
   $('#tone-hint').textContent = isAdaptive(method)
-    ? 'Adaptive: export analyses each frame. On the strips it runs per strip, so use Preview frame for the exact result. Sliders below apply after the adaptive step.'
+    ? 'Adaptive methods analyse each frame on export. The strips show a per-strip approximation, so use Preview (Enter) for the exact result. The sliders apply after the adaptive step.'
     : isQuantum(method) ? 'Quantum ranges: contrast 64 and gamma 0 are neutral.' : '';
 }
 
@@ -336,11 +406,12 @@ $('#tone-method').addEventListener('change', (e) => {
   sendProcess();
 });
 $$('.slider').forEach((el) => {
-  const [r, n] = el.querySelectorAll('input');
+  const [r, n] = sliderInputs(el);
   r.addEventListener('input', () => { n.value = r.value; sendProcess(); });
   n.addEventListener('change', () => {
     n.value = Math.max(Number(n.min), Math.min(Number(n.max), Number(n.value) || 0));
     r.value = n.value;
+    paintRange(r);
     sendProcess();
   });
 });
@@ -364,13 +435,14 @@ async function detect() {
   };
   state.detecting = true;
   refreshEnabled();
-  $('#det-progress').value = 0;
+  setBar('#det-bar', 0, 1);
   $('#det-status').textContent = 'Starting…';
   try {
     const r = await call('detect.run', args);
     applyFrames(r.frames, []);
-    const msg = r.found < 0 ? 'Detection cancelled.' : `Found ${r.found.toLocaleString()} frames.`;
+    const msg = r.found < 0 ? 'Detection cancelled' : `Found ${r.found.toLocaleString()} frames`;
     $('#det-status').textContent = msg;
+    setBar('#det-bar', 1, 1);
     status(msg);
   } catch (err) {
     $('#det-status').textContent = err.message;
@@ -382,10 +454,9 @@ async function detect() {
 }
 
 on('detect.progress', (p) => {
-  $('#det-progress').max = p.totalStrips;
-  $('#det-progress').value = p.currentStrip;
+  setBar('#det-bar', p.currentStrip, p.totalStrips);
   $('#det-status').textContent =
-    `Strip ${p.currentStrip.toLocaleString()} / ${p.totalStrips.toLocaleString()} · ${p.framesFound.toLocaleString()} frames` +
+    `Strip ${p.currentStrip.toLocaleString()} of ${p.totalStrips.toLocaleString()} · ${p.framesFound.toLocaleString()} frames` +
     (p.stripsMissing ? ` · ${p.stripsMissing} previews missing` : '');
 });
 
@@ -463,13 +534,12 @@ async function exportStart() {
   const args = gatherExport();
   if (args.scope === 'selected' && !args.indices.length) { toast('Select frames to export first.', 'error'); return; }
   $('#exp-failures').replaceChildren();
-  $('#exp-progress').value = 0;
+  setBar('#exp-bar', 0, 1);
   try {
     const r = await call('export.start', args);
     state.exporting = true;
     state.exportPaused = false;
-    $('#exp-pause').textContent = 'Pause';
-    $('#exp-progress').max = r.jobs;
+    $('#exp-pause span').textContent = 'Pause';
     $('#exp-status').textContent = `Exporting ${r.jobs.toLocaleString()} frames to ${r.outputRoot}`;
     view.frames.forEach((f) => { f.isExported = false; });
     view.invalidate();
@@ -484,14 +554,14 @@ const exportCounts = { exported: 0, skipped: 0, failed: 0 };
 on('export.progress', (p) => {
   if (p.done === 1) Object.assign(exportCounts, { exported: 0, skipped: 0, failed: 0 });
   exportCounts[p.outcome.toLowerCase()]++;
-  $('#exp-progress').max = p.total;
-  $('#exp-progress').value = p.done;
+  setBar('#exp-bar', p.done, p.total);
   $('#exp-status').textContent =
-    `${p.done.toLocaleString()} / ${p.total.toLocaleString()} · ${exportCounts.exported} exported · ` +
+    `${p.done.toLocaleString()} of ${p.total.toLocaleString()} · ${exportCounts.exported} exported · ` +
     `${exportCounts.skipped} skipped · ${exportCounts.failed} failed`;
   if (p.outcome === 'Exported' && view.frames[p.frameIdx]) {
     view.frames[p.frameIdx].isExported = true;
     view.invalidate();
+    scrubber.invalidate();
   }
   if (p.outcome === 'Failed') addFailure(p.frameIdx, p.error);
 });
@@ -515,22 +585,29 @@ function addFailure(frameIdx, error) {
   $('#exp-failures').append(li);
 }
 
-// ------------------------------------------------------------------ frame preview modal
+// ------------------------------------------------------------------ frame preview (lightbox)
 
 let modalIdx = -1;
+let modalLoad = null;   // resolves when the current image has loaded or failed (used by the self-test)
 
 async function openFrameModal(idx) {
   const f = view.frames[idx];
   if (!f) return;
   modalIdx = idx;
   $('#frame-modal').hidden = false;
-  $('#frame-modal-title').textContent = `Frame ${idx + 1} of ${view.frames.length}${f.isMarker ? ' · folder marker' : ''}`;
+  $('#frame-modal-title').textContent = `Frame ${idx + 1} of ${view.frames.length}${f.isMarker ? ' · folder start' : ''}`;
+  $('#frame-modal-size').textContent = `${f.trailEdge - f.leadEdge} × ${f.rightEdge - f.leftEdge}`;
   $('#frame-modal-loading').hidden = false;
-  $('#frame-modal-loading').textContent = 'Building frame…';
+  $('#frame-modal-loading span:last-child').textContent = 'Building frame…';
   const img = $('#frame-modal-img');
   img.hidden = true;
-  img.onload = () => { $('#frame-modal-loading').hidden = true; img.hidden = false; };
-  img.onerror = () => { $('#frame-modal-loading').textContent = 'Could not build this frame (missing strips or preview).'; };
+  modalLoad = new Promise((resolve) => {
+    img.onload = () => { $('#frame-modal-loading').hidden = true; img.hidden = false; resolve(true); };
+    img.onerror = () => {
+      $('#frame-modal-loading span:last-child').textContent = 'Could not build this frame (missing strips or preview).';
+      resolve(false);
+    };
+  });
   // Geometry is part of the URL so an edited frame is never served from the image cache.
   img.src = `https://img.striplight/frame/${idx}?v=${state.imageVersion}&g=${frameKey(f)}:${f.rotation}:${f.hasOverride}`;
   view.select(idx);
@@ -541,9 +618,17 @@ async function openFrameModal(idx) {
 
 function closeFrameModal() {
   $('#frame-modal').hidden = true;
+  $('#frame-modal-body').classList.remove('actual');
+  $('#frame-modal-zoom').textContent = 'Fit';
   modalIdx = -1;
   $('#strip-canvas').focus();
 }
+
+function toggleModalZoom() {
+  const actual = $('#frame-modal-body').classList.toggle('actual');
+  $('#frame-modal-zoom').textContent = actual ? '100%' : 'Fit';
+}
+$('#frame-modal-img').addEventListener('click', toggleModalZoom);
 
 // ------------------------------------------------------------------ context menu
 
@@ -570,16 +655,29 @@ $('#context-menu').addEventListener('click', (e) => {
 });
 document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#context-menu')) hideContextMenu(); });
 
+// ------------------------------------------------------------------ tabs
+
+function showTab(name) {
+  $$('.rail [data-tab]').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === name)));
+  $$('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== name; });
+  if (name === 'notes') initNotes($('#notes-editor'));
+  if (name === 'export') updateExportExample();
+}
+$$('.rail [data-tab]').forEach((tab) => tab.addEventListener('click', () => showTab(tab.dataset.tab)));
+
 // ------------------------------------------------------------------ commands
 
 const commands = {
   open: () => openProject(),
+  demo: openDemo,
   save: () => save(false),
   saveAs: () => save(true),
   first: () => view.gotoPage(0),
   prev: () => view.gotoPage(view.page - 1),
   next: () => view.gotoPage(view.page + 1),
   last: () => view.gotoPage(view.pageCount - 1),
+  zoomIn: () => setZoom(view.zoom * 1.15),
+  zoomOut: () => setZoom(view.zoom / 1.15),
   selectAll: () => view.selectAll(),
   selectPage: () => view.selectPage(),
   selectNone: () => view.selectNone(),
@@ -613,7 +711,7 @@ const commands = {
   exportPause: async () => {
     state.exportPaused = !state.exportPaused;
     await call(state.exportPaused ? 'export.pause' : 'export.resume');
-    $('#exp-pause').textContent = state.exportPaused ? 'Resume' : 'Pause';
+    $('#exp-pause span').textContent = state.exportPaused ? 'Resume' : 'Pause';
   },
   exportStop: () => call('export.cancel'),
   modalPrev: () => modalIdx > 0 && openFrameModal(modalIdx - 1),
@@ -623,30 +721,24 @@ const commands = {
     await frameCommand('frames.toggleMarker');
     openFrameModal(idx);
   },
+  modalZoom: toggleModalZoom,
   modalClose: closeFrameModal,
+  shortcuts: () => { $('#shortcuts-modal').hidden = false; },
+  shortcutsClose: () => { $('#shortcuts-modal').hidden = true; },
 };
 
 document.addEventListener('click', (e) => {
+  if (e.target.id === 'shortcuts-modal') { commands.shortcutsClose(); return; }
   const el = e.target.closest('[data-cmd]');
   if (!el || el.disabled) return;
   const fn = commands[el.dataset.cmd];
   if (fn) Promise.resolve(fn()).catch(() => {});
 });
 
-// ------------------------------------------------------------------ tabs
-
-$$('.tabs [data-tab]').forEach((tab) => tab.addEventListener('click', () => {
-  $$('.tabs [data-tab]').forEach((t) => t.setAttribute('aria-selected', String(t === tab)));
-  $$('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== tab.dataset.tab; });
-  if (tab.dataset.tab === 'notes') initNotes($('#notes-editor'));
-  if (tab.dataset.tab === 'export') updateExportExample();
-}));
-
 // ------------------------------------------------------------------ keyboard
 
 function typing(e) {
-  const t = e.target;
-  return t.closest('input, textarea, select, [contenteditable="true"], .toastui-editor-defaultUI');
+  return e.target.closest('input, textarea, select, [contenteditable="true"], .toastui-editor-defaultUI');
 }
 
 document.addEventListener('keydown', (e) => {
@@ -654,14 +746,22 @@ document.addEventListener('keydown', (e) => {
   if (ctrl && e.key.toLowerCase() === 'o') { e.preventDefault(); commands.open(); return; }
   if (ctrl && e.key.toLowerCase() === 's') { e.preventDefault(); save(e.shiftKey); return; }
 
-  if (!$('#frame-modal').hidden) {
-    if (e.key === 'Escape') closeFrameModal();
-    else if (e.key === 'ArrowLeft') commands.modalPrev();
-    else if (e.key === 'ArrowRight') commands.modalNext();
-    else if (e.key.toLowerCase() === 'm') commands.modalMarker();
+  if (!$('#shortcuts-modal').hidden) {
+    if (e.key === 'Escape' || e.key === '?') commands.shortcutsClose();
     return;
   }
-  if (typing(e) || !hasRoll()) return;
+  if (!$('#frame-modal').hidden) {
+    const k = e.key.toLowerCase();
+    if (k === 'escape') closeFrameModal();
+    else if (k === 'arrowleft') commands.modalPrev();
+    else if (k === 'arrowright') commands.modalNext();
+    else if (k === 'm') commands.modalMarker();
+    else if (k === 'z') toggleModalZoom();
+    return;
+  }
+  if (typing(e)) return;
+  if (e.key === '?') { commands.shortcuts(); return; }
+  if (!hasRoll()) return;
 
   switch (e.key) {
     case 'Escape': if (!view.cancelDrag()) view.selectNone(); hideContextMenu(); break;
@@ -672,9 +772,9 @@ document.addEventListener('keydown', (e) => {
     case 'PageUp': commands.prev(); break;
     case 'Home': commands.first(); break;
     case 'End': commands.last(); break;
-    case '+': case '=': setZoom(Math.min(4, view.zoom * 1.1)); break;
-    case '-': setZoom(Math.max(0.25, view.zoom / 1.1)); break;
-    case 'a': case 'A': if (ctrl) { e.preventDefault(); view.selectAll(); } break;
+    case '+': case '=': commands.zoomIn(); break;
+    case '-': commands.zoomOut(); break;
+    case 'a': case 'A': if (ctrl) { e.preventDefault(); view.selectAll(); } else return; break;
     default: return;
   }
   e.preventDefault();
@@ -684,6 +784,34 @@ document.addEventListener('keydown', (e) => {
 
 on('project.dirty', setDirty);
 on('toast', (m) => toast(m));
+
+// ------------------------------------------------------------------ smoke self-test (CI only)
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+window.__striplightSelfTest = async () => {
+  const result = { ok: false, frames: view.frames.length };
+  try {
+    for (let i = 0; i < 40 && [...view.images.values()].some((e) => e.state === 'loading'); i++) await sleep(250);
+    result.stripImagesLoaded = [...view.images.values()].filter((e) => e.state === 'ok').length;
+    showTab('notes');
+    await sleep(400);
+    result.notesEditor = !!document.querySelector('#notes-editor .toastui-editor-defaultUI');
+    showTab('frames');
+    view.select(Math.min(2, view.frames.length - 1));
+    await openFrameModal(Math.min(2, view.frames.length - 1));
+    result.framePreviewLoaded = await Promise.race([modalLoad, sleep(20000).then(() => false)]);
+    result.ok = result.frames > 0 && result.stripImagesLoaded > 0 && result.notesEditor && result.framePreviewLoaded;
+  } catch (err) {
+    result.error = String(err);
+  }
+  await call('smoke.result', result);
+};
+
+window.__striplightSelfTestCleanup = () => {
+  closeFrameModal();
+  showTab('process');
+};
 
 // ------------------------------------------------------------------ start-up
 
@@ -695,6 +823,7 @@ async function init() {
   }
   const info = await run('app.init');
   state.settings = info.settings;
+  state.smoke = !!info.smoke;
   $('#tone-method').replaceChildren(...info.toneMethods.map((name, i) => new Option(name, String(i))));
   $('#status-engine').textContent = `v${info.version} · ${info.turboJpeg}`;
   document.title = `Striplight PRO ${info.version}`;
@@ -703,11 +832,13 @@ async function init() {
   $('#strips-per-row').value = s.stripsPerRow;
   $('#rotate-cw').checked = s.rotateCw;
   $('#zoom').value = Math.round(s.zoom * 100);
+  paintRange($('#zoom'));
   $('#zoom-out').textContent = `${Math.round(s.zoom * 100)}%`;
   view.setView({ stripsPerRow: s.stripsPerRow, zoom: s.zoom, fillOpacity: s.frameFillOpacity });
   applyRanges(0, true);
   renderRecent();
   if (info.session) applySession(info.session);
+  if (state.smoke) call('app.ready').catch(() => {});
 }
 
 init().catch((err) => status(err.message));

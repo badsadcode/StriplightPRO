@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Windows;
 using Microsoft.Win32;
 using Striplight.App.Bridge;
+using Striplight.Core.Demo;
 using Striplight.Core.Detection;
 using Striplight.Core.Editing;
 using Striplight.Core.Export;
@@ -42,6 +43,23 @@ public sealed class AppController
         Register();
     }
 
+    // ------------------------------------------------------------ smoke test hooks
+
+    public bool SmokeMode { get; init; }
+    public List<string> JsErrors { get; } = [];
+    public Action<JsonElement>? OnSelfTestResult { get; set; }
+
+    private static string DemoFolder => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "StriplightPRO", "Demo");
+
+    public async Task<ExportSummary> SmokeExportAsync(string outputRoot)
+    {
+        var naming = new NamingOptions { OutputRoot = outputRoot, FileDigits = 5, SeparateFolders = true };
+        var jobs = ExportEngine.BuildJobs(_project.Frames, Enumerable.Range(0, _project.Frames.Count), naming);
+        return await new ExportEngine().RunAsync(_project.Roll, _project.Frames, jobs,
+            _process.ToProcessSettings(_settings.RotateCw), new ExportOptions { Workers = 4 });
+    }
+
     // ------------------------------------------------------------ state for ImageService
 
     public RollData Roll => _project.Roll;
@@ -55,13 +73,28 @@ public sealed class AppController
 
     private void Register()
     {
+        _bridge.On("app.log", args =>
+        {
+            string msg = BridgeHost.Arg(args, "message", "");
+            if (msg != "") lock (JsErrors) JsErrors.Add(msg);
+            return null;
+        });
+        _bridge.On("smoke.result", args => { OnSelfTestResult?.Invoke(args.Clone()); return null; });
+        _bridge.OnAsync("project.demo", async _ =>
+        {
+            if (!ConfirmDiscardOrSave("opening the demo roll")) return null;
+            string idf = await Task.Run(() => DemoRoll.Create(DemoFolder));
+            _dirty = false;
+            return OpenProject(idf);
+        });
         _bridge.On("app.init", _ => new
         {
             version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.1.0",
             turboJpeg = TurboJpeg.Status,
             toneMethods = Enumerable.Range(0, ToneMethod.Count).Select(ToneAdjust.MethodName).ToArray(),
             settings = _settings,
-            session = _project.Roll.Loaded ? Session() : null,
+            session = SmokeMode ? OpenProject(DemoRoll.Create(DemoFolder)) : _project.Roll.Loaded ? Session() : null,
+            smoke = SmokeMode,
         });
 
         _bridge.On("project.open", args => OpenProject(BridgeHost.Arg(args, "path", "")));

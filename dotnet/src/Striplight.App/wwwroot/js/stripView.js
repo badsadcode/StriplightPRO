@@ -5,6 +5,8 @@
 // Strips sit edge to edge in rows; a page is as many rows as fit the canvas height.
 
 const BASE_STRIP_W = 160;   // strip width on screen at zoom 1.0
+const PAD_TOP = 66;         // room for the floating view toolbar
+const PAD_BOTTOM = 86;      // room for the legend and the roll scrubber
 const HANDLE = 6;           // edge grab distance, px
 const DRAG_START = 4;       // px before a press becomes a drag
 
@@ -125,10 +127,11 @@ export class StripView {
     } else {
       this.stripH = this.stripW;
     }
-    this.rowsPerPage = Math.max(1, Math.floor(h / this.stripH));
+    const availH = Math.max(this.stripH, h - PAD_TOP - PAD_BOTTOM);
+    this.rowsPerPage = Math.max(1, Math.floor(availH / this.stripH));
     this.perPage = this.stripsPerRow * this.rowsPerPage;
     this.originX = Math.max(0, Math.floor((w - this.stripsPerRow * this.stripW) / 2));
-    this.originY = Math.max(0, Math.floor((h - this.rowsPerPage * this.stripH) / 2));
+    this.originY = PAD_TOP + Math.max(0, Math.floor((availH - this.rowsPerPage * this.stripH) / 2));
   }
 
   get stripCount() { return this.roll ? this.roll.stripCount : 0; }
@@ -221,10 +224,23 @@ export class StripView {
 
   draw() {
     const ctx = this.ctx, w = this.canvas.clientWidth, h = this.canvas.clientHeight;
-    ctx.fillStyle = '#0d0e10';
-    ctx.fillRect(0, 0, w, h);
+    ctx.clearRect(0, 0, w, h);
     this.segments = [];
-    if (!this.roll) return;
+    if (!this.roll || !this.pageStripCount) return;
+
+    // The page sits on a rounded "light table" plate with a soft shadow.
+    const rows = Math.ceil(this.pageStripCount / this.stripsPerRow);
+    const cols = Math.min(this.stripsPerRow, this.pageStripCount);
+    const plate = { x: this.originX - 6, y: this.originY - 6, w: cols * this.stripW + 12, h: rows * this.stripH + 12 };
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.55)';
+    ctx.shadowBlur = 30;
+    ctx.shadowOffsetY = 10;
+    ctx.fillStyle = '#16181c';
+    ctx.beginPath();
+    ctx.roundRect(plate.x, plate.y, plate.w, plate.h, 10);
+    ctx.fill();
+    ctx.restore();
 
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
@@ -236,25 +252,35 @@ export class StripView {
       if (e.state === 'ok') ctx.drawImage(e.img, r.x, r.y, r.w, r.h);
       else if (e.stale) ctx.drawImage(e.stale, r.x, r.y, r.w, r.h);
       else {
-        ctx.fillStyle = '#17191c';
+        ctx.fillStyle = '#1b1e23';
         ctx.fillRect(r.x, r.y, r.w, r.h);
-        if (e.state === 'missing') this.label(r, 'missing preview', '#6d6a64');
+        if (e.state === 'missing') this.label(r, 'No preview', '#6c727d');
       }
       if (e.state === 'loading') allLoaded = false;
-      // strip number + boundary
-      ctx.fillStyle = 'rgba(13,14,16,.65)';
-      ctx.fillRect(r.x + 2, r.y + 2, 46, 15);
-      ctx.fillStyle = '#9b968d';
-      ctx.font = '10px "Cascadia Mono", Consolas, monospace';
-      ctx.fillText(String(strip + 1), r.x + 5, r.y + 13);
-      ctx.strokeStyle = 'rgba(255,255,255,.06)';
+      // strip boundary + number pill
+      ctx.strokeStyle = 'rgba(255,255,255,.05)';
       ctx.lineWidth = 1;
       ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+      this.pill(String(strip + 1), r.x + 5, r.y + r.h - 22, 'rgba(10,11,13,.72)', '#a4a9b4');
     }
 
     this.drawFrames();
     if (this.drag && this.drag.mode === 'draw' && this.drag.moved) this.drawRubberBand();
     if (allLoaded) this.prefetchNextPage();
+  }
+
+  /** Small rounded label; returns its width. */
+  pill(text, x, y, bg, fg, bold = false) {
+    const ctx = this.ctx;
+    ctx.font = `${bold ? 650 : 500} 10.5px "Segoe UI Variable Text", "Segoe UI", sans-serif`;
+    const w = Math.ceil(ctx.measureText(text).width) + 12;
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, 17, 8.5);
+    ctx.fill();
+    ctx.fillStyle = fg;
+    ctx.fillText(text, x + 6, y + 12.5);
+    return w;
   }
 
   label(r, text, color) {
@@ -304,8 +330,12 @@ export class StripView {
 
   drawFrames() {
     const ctx = this.ctx;
-    const fill = Math.max(0, Math.min(1, this.fillOpacity / 100)) * 0.45;
+    const fill = Math.max(0, Math.min(1, this.fillOpacity / 100)) * 0.32;
     const singleSel = this.selected.size === 1 ? [...this.selected][0] : -1;
+    // Folder number of each marker (frames are sorted along the film).
+    const folderOf = new Map();
+    let folder = 0;
+    this.frames.forEach((f, i) => { if (f.isMarker) folderOf.set(i, ++folder); });
     // Selected frames last, so they sit on top.
     const order = this.frames.map((_, i) => i).sort((a, b) => this.selected.has(a) - this.selected.has(b));
     for (const i of order) {
@@ -320,33 +350,43 @@ export class StripView {
       for (const g of segs) {
         this.segments.push({ idx: i, ...g });
         const w = g.x2 - g.x1, h = g.y2 - g.y1;
-        if (fill > 0) {
-          ctx.globalAlpha = fill;
+        if (fill > 0 || sel) {
+          ctx.globalAlpha = sel ? Math.max(fill, 0.16) : fill;
           ctx.fillStyle = color;
-          ctx.fillRect(g.x1, g.y1, w, h);
+          ctx.beginPath();
+          ctx.roundRect(g.x1, g.y1, w, h, 3);
+          ctx.fill();
           ctx.globalAlpha = 1;
         }
-        ctx.lineWidth = 2;
+        ctx.save();
+        if (sel) { ctx.shadowColor = COLOR.selected; ctx.shadowBlur = 12; }
+        ctx.lineWidth = sel ? 2 : 1.5;
         ctx.strokeStyle = f.isSuggested && !sel ? COLOR.suggested : color;
-        ctx.setLineDash(f.isSuggested ? [6, 4] : []);
-        ctx.strokeRect(g.x1 + 1, g.y1 + 1, Math.max(0, w - 2), Math.max(0, h - 2));
-        ctx.setLineDash([]);
+        ctx.setLineDash(f.isSuggested ? [5, 4] : []);
+        ctx.beginPath();
+        ctx.roundRect(g.x1 + 1, g.y1 + 1, Math.max(0, w - 2), Math.max(0, h - 2), 3);
+        ctx.stroke();
+        ctx.restore();
 
         if (f.isMarker && g.isLead) {
-          // Folder marker: a bold yellow bar along the lead edge with a flag.
+          // Folder marker: amber bar on the lead edge plus a folder-number pill.
           ctx.fillStyle = COLOR.marker;
-          ctx.fillRect(g.x1, g.y1, 4, h);
           ctx.beginPath();
-          ctx.moveTo(g.x1 + 4, g.y1);
-          ctx.lineTo(g.x1 + 16, g.y1 + 6);
-          ctx.lineTo(g.x1 + 4, g.y1 + 12);
+          ctx.roundRect(g.x1, g.y1, 3.5, h, 2);
           ctx.fill();
+          if (w > 30) this.pill(`F${folderOf.get(i)}`, g.x1 + 6, g.y1 + 5, COLOR.marker, '#1b1204', true);
         }
         if (g.isLead && (f.hasOverride || hasTone(f))) {
           ctx.fillStyle = COLOR.perframe;
           ctx.beginPath();
-          ctx.arc(g.x2 - 7, g.y1 + 7, 3.5, 0, Math.PI * 2);
+          ctx.arc(g.x2 - 8, g.y1 + 8, 3.5, 0, Math.PI * 2);
           ctx.fill();
+        }
+        if (sel && g.isLead && w > 40 && h > 40) {
+          ctx.font = '600 10.5px "Segoe UI Variable Text", "Segoe UI", sans-serif';
+          const t = String(i + 1);
+          const tw = ctx.measureText(t).width + 12;
+          this.pill(t, g.x2 - tw - 4, g.y2 - 21, COLOR.selected, '#04131c', true);
         }
         if (i === singleSel && w > 24 && h > 24) this.drawHandles(g);
       }
@@ -354,13 +394,21 @@ export class StripView {
   }
 
   drawHandles(g) {
-    const ctx = this.ctx, s = 7;
-    ctx.fillStyle = COLOR.selected;
+    const ctx = this.ctx;
     const my = (g.y1 + g.y2) / 2, mx = (g.x1 + g.x2) / 2;
-    if (g.isLead) ctx.fillRect(g.x1 - s / 2, my - s / 2, s, s);
-    if (g.isTrail) ctx.fillRect(g.x2 - s / 2, my - s / 2, s, s);
-    ctx.fillRect(mx - s / 2, g.y1 - s / 2, s, s);
-    ctx.fillRect(mx - s / 2, g.y2 - s / 2, s, s);
+    const dot = (x, y) => {
+      ctx.beginPath();
+      ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = COLOR.selected;
+      ctx.stroke();
+    };
+    if (g.isLead) dot(g.x1, my);
+    if (g.isTrail) dot(g.x2, my);
+    dot(mx, g.y1);
+    dot(mx, g.y2);
   }
 
   drawRubberBand() {

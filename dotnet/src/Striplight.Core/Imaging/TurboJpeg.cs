@@ -42,7 +42,12 @@ public static partial class TurboJpeg
                 ? ["libturbojpeg.dylib", "libturbojpeg.0.dylib"]
                 : ["libturbojpeg.so.0", "libturbojpeg.so"];
         foreach (var c in candidates)
-            if (NativeLibrary.TryLoad(c, out var h)) return h;
+        {
+            // The assembly-aware overload also probes the folder a single-file exe extracts
+            // its native libraries to; the plain overload covers absolute paths and PATH.
+            if (NativeLibrary.TryLoad(c, asm, path, out var h)) return h;
+            if (NativeLibrary.TryLoad(c, out h)) return h;
+        }
         return IntPtr.Zero;
     }
 
