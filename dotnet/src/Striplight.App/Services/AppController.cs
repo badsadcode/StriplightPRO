@@ -238,12 +238,19 @@ public sealed class AppController
             _process = BridgeHost.Args<ProcessDto>(args);
             _process.StoreTo(_project.Roll);
             MarkDirty();
-            return new { imageVersion = ++_imageVersion };
+            ++_imageVersion;
+            // Tell every page: the preview window must rebuild its frame with the new tone.
+            _bridge.Emit("images.changed", new { imageVersion = _imageVersion });
+            return new { imageVersion = _imageVersion };
         });
         _bridge.On("view.set", args =>
         {
             bool rotate = BridgeHost.Arg(args, "rotateCw", _settings.RotateCw);
-            if (rotate != _settings.RotateCw) _imageVersion++;
+            if (rotate != _settings.RotateCw)
+            {
+                _imageVersion++;
+                _bridge.Emit("images.changed", new { imageVersion = _imageVersion });
+            }
             _settings.RotateCw = rotate;
             _settings.StripsPerRow = Math.Clamp(BridgeHost.Arg(args, "stripsPerRow", _settings.StripsPerRow), 1, 20);
             _settings.Zoom = Math.Clamp(BridgeHost.Arg(args, "zoom", _settings.Zoom), 0.25, 4.0);

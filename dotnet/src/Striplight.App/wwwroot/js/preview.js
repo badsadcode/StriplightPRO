@@ -246,5 +246,7 @@ document.addEventListener('keydown', (e) => {
 on('preview.show', (d) => load(d.index, { keepView: true }));
 on('frames.changed', (d) => { if (d?.source !== 'preview') load(st.index, { keepView: true }); });
 on('theme.changed', (d) => { document.documentElement.dataset.theme = d.theme; });
+// Tone or orientation changed in the main window: rebuild this frame (keeps zoom and position).
+on('images.changed', () => load(st.index, { keepView: true }));
 
 load(st.index);
