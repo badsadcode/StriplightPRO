@@ -284,7 +284,7 @@
   <ul>
     <li>Settings (window, theme, language, shortcuts, last folders): <code>%APPDATA%\StriplightPRO\settings.json</code>.</li>
     <li>The strip view and detection use the roll's preview files; export uses the full strips. If previews are missing, the status line after detection says how many and where they were expected.</li>
-    <li>On network shares, keep <b>Workers</b> moderate (4–8) and switch on <b>Stage through local temp</b>.</li>
+    <li>On network shares the share is usually the limit: in a real test (3,435 frames to a share in another building) 10 workers took 10.7 min and 16 workers 10.5 min, against ~26 min in the Lazarus edition. More workers only help while the network has room — watch the time and pick what suits your PC.</li>
     <li>Striplight needs the Microsoft Edge WebView2 Runtime (already part of Windows 10/11).</li>
   </ul>
 </section>

@@ -159,6 +159,18 @@ Preview window: X / C (or ← / →) previous / next frame by the step, G / F fo
 
 **Help** (the ? circle in the app bar, or **F1**) opens the manual in its own window, at the topic of the panel in front. It is written in English and Polish (`wwwroot/help/en.html`, `help/pl.html`; one `<section id>` per topic with an `<h2>`), has a contents list and search, and follows the chosen language and theme. Keep both files in step when features change.
 
+## Real-world speed
+
+Same roll (4,860 strips, 3,435 frames, quality 94), exported over the network to a share in another building:
+
+| | Workers | Time | Frames/s |
+|---|---|---|---|
+| Lazarus edition | 16 | ~26 min | ~2.2 |
+| Striplight PRO | 10 | 10.7 min | 5.3 |
+| Striplight PRO | 16 | 10.5 min | 5.4 |
+
+PRO is about 2.5× faster with the same workers. Going from 10 to 16 workers gained ~1.5% because the share was already the limit: more workers only help while the network has room. Workers are not capped; choose what suits the PC.
+
 ## Languages
 
 English (default) and Polish. Switch with the **EN / PL** button in the app bar; both windows reload in the new language and the open roll stays as it is.
