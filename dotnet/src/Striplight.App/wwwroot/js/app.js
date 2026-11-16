@@ -15,6 +15,7 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 hydrateIcons();
 initSegmented($('#ovr-rotation'));
+initSegmented($('#det-scope'));
 initSegmented($('#proc-rotation'));
 initRanges();
 
@@ -138,6 +139,7 @@ function applySession(s) {
   $('#det-from').value = 1;
   $('#det-from').max = $('#det-to').max = s.roll.stripCount;
   $('#det-to').value = s.roll.stripCount;
+  $('#det-scope').value = 'all';
 
   loadProcess(s.process);
   loadExport(s.export, s.defaultOutputRoot);
@@ -442,6 +444,7 @@ async function clearExported(indices) {
 
 function setDetectRange(which, strip) {
   $(which === 'from' ? '#det-from' : '#det-to').value = strip + 1;
+  $('#det-scope').value = 'range';
   refreshOverlays();
   showTab('detect');
   toast(`Detection ${which === 'from' ? 'starts' : 'ends'} at strip ${strip + 1}`);
@@ -454,7 +457,8 @@ function refreshOverlays() {
   view.trim = { show: $('#trim-show').checked, top: num('#trim-top'), bottom: num('#trim-bottom') };
   view.area = { show: $('#det-area').checked, top: num('#det-left'), bottom: num('#det-right') };
   const from = Math.max(0, num('#det-from') - 1), to = Math.max(0, num('#det-to') - 1);
-  view.range = { show: from > 0 || to < state.session.roll.stripCount - 1, from, to };
+  view.range = { show: $('#det-scope').value === 'range', from, to };
+  $('#det-run').lastChild.textContent = view.range.show ? `Detect strips ${from + 1}–${to + 1}` : 'Detect whole roll';
   view.join = { show: $('#join-show').checked, gap: num('#join-gap') };
   view.invalidate();
 }
@@ -467,6 +471,9 @@ function overlayChanged(layer, side, v) {
 
 ['#trim-show', '#trim-top', '#trim-bottom', '#det-area', '#det-left', '#det-right', '#det-from', '#det-to', '#join-show', '#join-gap']
   .forEach((id) => $(id).addEventListener('input', refreshOverlays));
+// Typing a start or end means "detect this range" (as in the Lazarus edition)
+['#det-from', '#det-to'].forEach((id) => $(id).addEventListener('input', () => { $('#det-scope').value = 'range'; refreshOverlays(); }));
+$('#det-scope').addEventListener('change', refreshOverlays);
 
 // ------------------------------------------------------------------ folder-marker suggestions
 
@@ -616,12 +623,13 @@ $$('#tone-flags input, #sharp-mode, #proc-rotation, #proc-mirror, #proc-negative
 async function detect() {
   if (!hasRoll() || state.detecting) return;
   const stripCount = state.session.roll.stripCount;
+  const wholeRoll = $('#det-scope').value !== 'range';
   const args = {
     threshold: Number($('#det-threshold').value),
     minWidth: Number($('#det-minw').value),
     minLength: Number($('#det-minl').value),
-    stripFrom: Math.max(0, (Number($('#det-from').value) || 1) - 1),
-    stripTo: Math.min(stripCount - 1, (Number($('#det-to').value) || stripCount) - 1),
+    stripFrom: wholeRoll ? 0 : Math.max(0, (Number($('#det-from').value) || 1) - 1),
+    stripTo: wholeRoll ? stripCount - 1 : Math.min(stripCount - 1, (Number($('#det-to').value) || stripCount) - 1),
     // Insets are counted from stored column 0, which is the bottom of the screen in the
     // default CCW orientation and the top in CW mode. The fields are labelled as seen on screen.
     leftInset: $('#det-area').checked ? Number($(view.rotateCw ? '#det-left' : '#det-right').value) || 0 : 0,
@@ -632,7 +640,7 @@ async function detect() {
   refreshEnabled();
   startLiveDetect(args.stripFrom, args.stripTo);
   setBar('#det-bar', 0, 1);
-  $('#det-status').textContent = 'Starting…';
+  $('#det-status').textContent = wholeRoll ? 'Starting · whole roll…' : `Starting · strips ${args.stripFrom + 1}–${args.stripTo + 1}…`;
   try {
     const r = await call('detect.run', args);
     applyFrames(r.frames, []);

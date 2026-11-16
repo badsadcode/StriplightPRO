@@ -222,6 +222,9 @@
         </div>
         <div class="section">
           <h3>Range</h3>
+          <div class="seg" id="det-scope" role="radiogroup" aria-label="Detect">
+            <button data-v="all">Whole roll</button><button data-v="range">Strip range</button>
+          </div>
           <div class="field-grid two">
             <label class="field">From strip<input type="number" id="det-from" min="1" value="1"></label>
             <label class="field">To strip<input type="number" id="det-to" min="1" value="1"></label>
@@ -229,7 +232,7 @@
             <label class="field">Ignore bottom<span class="suffix"><input type="number" id="det-right" min="0" value="0"><em>px</em></span></label>
           </div>
           <label class="switch"><input type="checkbox" id="det-area"><span></span>Use and show the ignore area (drag the blue lines)</label>
-          <p class="hint">Detection range start and end are marked on the strips; right-click a strip to set them.</p>
+          <p class="hint">Setting a start or end (here or by right-clicking a strip) switches to “Strip range”; its start and end are marked on the strips.</p>
         </div>
         <div class="section run-card">
           <div class="btn-row">
