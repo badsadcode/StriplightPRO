@@ -615,7 +615,17 @@ export class StripView {
       mode, edges: handle?.edges ?? [], cursor: handle?.cursor ?? '', indices, moved: false,
       startX: e.clientX, startY: e.clientY, startFilm: film, curFilm: film,
       originals: indices.map((i) => ({ ...this.frames[i] })),
+      // Top of the strip row the drag started in: across-the-film positions are measured
+      // in this row, so drifting into the row above/below cannot flip a frame edge.
+      rowTop: this.rowTopAt(e),
     };
+  }
+
+  /** Screen y of the top of the strip row under a pointer event. */
+  rowTopAt(e) {
+    const { y } = this.point(e);
+    const row = Math.max(0, Math.min(this.rowsPerPage - 1, Math.floor((y - this.originY) / this.stripH)));
+    return this.originY + row * this.stripH;
   }
 
   onPointerMove(e) {
@@ -627,8 +637,18 @@ export class StripView {
     }
     if (!d.moved && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < DRAG_START) return;
     d.moved = true;
-    const film = this.screenToFilm(x, y, true);
+    // Stay in the start row unless the pointer is well into another row (intentional move
+    // across rows); small vertical drift during a horizontal drag must not jump a whole row.
+    let yRow = y;
+    if (d.mode !== 'draw') {
+      const top = d.rowTop, bottom = d.rowTop + this.stripH, slack = this.stripH * 0.6;
+      if (y > top - slack && y < bottom + slack) yRow = Math.max(top + 1, Math.min(bottom - 1, y));
+    }
+    const film = this.screenToFilm(x, yRow, true);
     if (!film) return;
+    if (d.mode !== 'draw') {
+      film.across = Math.round(Math.max(0, Math.min(this.roll.widthPixels, this.yToAcross(y - d.rowTop))));
+    }
     d.curFilm = film;
     const r = this.roll, maxLead = r.stripCount * r.lengthLines, minSize = 4 * Math.max(1, r.previewDownScale);
 

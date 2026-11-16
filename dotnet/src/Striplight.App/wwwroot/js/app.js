@@ -46,6 +46,8 @@ const view = new StripView($('#strip-canvas'), {
   onZoomRequest: (z) => setZoom(z),
 });
 const scrubber = new Scrubber($('#scrubber'), view);
+// For automated UI tests (smoke test, browser harness).
+window.__striplight = { view };
 
 // ------------------------------------------------------------------ helpers
 
