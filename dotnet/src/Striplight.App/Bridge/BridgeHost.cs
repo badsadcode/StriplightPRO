@@ -60,6 +60,11 @@ public sealed class BridgeHost
         {
             return Reply(id, false, null, ex.Message);
         }
+        catch (Exception ex)
+        {
+            // Never leave the page waiting for a reply that does not come: report anything unexpected.
+            return Reply(id, false, null, $"Unexpected error ({ex.GetType().Name}): {ex.Message}");
+        }
     }
 
     private static string Reply(long id, bool ok, object? result, string? error) =>

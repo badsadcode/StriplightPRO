@@ -111,9 +111,10 @@ dotnet/
 | | Trim lines, detection range/area drag handles, split preview, stacked-frame click cycling | ⏳ TODO |
 | Frames | Delete, toggle/clear markers, per-frame rotate/mirror/negative, clear overrides | ✅ |
 | | Merge pairs (E), combine overlapping (J), split (S), toggle suggested (Z), undo (Ctrl+Z) | ✅ |
-| | Suggest markers, close gaps, expand, select by size | ⏳ TODO |
+| | Suggest markers (gap-based, strictness, before/after gap, toward start/end), select / clear / every Nth / make markers, clear markers toward start/end | ✅ |
+| | Close gaps, expand, select by size | ⏳ TODO |
 | Preview | Separate window, always on top, wheel zoom, pan, fit / 1:1, full quality, frame step, markers, per-frame rotate/mirror/negative | ✅ |
-| Detection | Preview-based detection with threshold, min size, strip range, insets | ✅ |
+| Detection | Preview-based detection with threshold, min size, strip range, insets | ✅ uses the on-screen tone curve; live view that follows the scan |
 | Tone | All 9 methods (classic LUTs + auto levels, CLAHE, exposure balance, background flatten), 5 flags, sharpen | ✅ same math, tested |
 | | Per-frame tone sliders | ⏳ values are honoured on export, but not editable yet |
 | Export | Quantum folder naming, archive-list naming, digits/prefix, skip existing, preview fallback, local temp staging | ✅ |

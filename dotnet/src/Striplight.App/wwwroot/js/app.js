@@ -382,6 +382,37 @@ function setFill(v, persist = true) {
 $('#fill-range').addEventListener('input', (e) => setFill(e.target.value));
 $('#fill-num').addEventListener('change', (e) => setFill(e.target.value));
 
+// ------------------------------------------------------------------ folder-marker suggestions
+
+const anchor = () => (view.selected.size === 1 ? [...view.selected][0] : -1);
+
+async function suggest(direction = 0) {
+  if (direction && anchor() < 0) { toast('Select exactly one frame as the anchor.'); return; }
+  const r = await run('markers.suggest', {
+    strictness: Number($('#sug-num').value) || 50, beforeGap: $('#sug-before').checked, direction, anchor: anchor(),
+  });
+  applyFrames(r.frames);
+  const where = direction < 0 ? ' toward start' : direction > 0 ? ' toward end' : '';
+  $('#sug-status').textContent = `Suggested ${r.suggested.toLocaleString()} markers${where} · gap threshold ${r.threshold.toLocaleString()} px`;
+}
+
+async function markerTool(cmd, args, label) {
+  const r = await run(cmd, args);
+  applyFrames(r.frames);
+  $('#sug-status').textContent = `${label}: ${r.count.toLocaleString()}`;
+}
+
+function setStrictness(v) {
+  v = Math.max(10, Math.min(200, Number(v) || 50));
+  $('#sug-num').value = $('#sug-range').value = v;
+  paintRange($('#sug-range'));
+}
+// Like Lazarus: moving the slider re-runs the suggestion when suggestions are showing.
+const resuggest = debounce(() => { if (view.frames.some((f) => f.isSuggested)) suggest(0); }, 250);
+$('#sug-range').addEventListener('input', (e) => { setStrictness(e.target.value); resuggest(); });
+$('#sug-num').addEventListener('change', (e) => { setStrictness(e.target.value); resuggest(); });
+$('#sug-before').addEventListener('change', resuggest);
+
 // Split preview (Lazarus): dashed lines where S would cut the selected frames.
 function refreshSplitPreview() {
   view.splitPreview = $('#split-preview').checked;
@@ -481,7 +512,7 @@ $('#tone-method').addEventListener('change', (e) => {
   lastMethod = m;
   sendProcess();
 });
-$$('.slider:not(.fill-slider)').forEach((el) => {
+$$('.slider:not(.standalone)').forEach((el) => {
   const [r, n] = sliderInputs(el);
   r.addEventListener('input', () => { n.value = r.value; sendProcess(); });
   n.addEventListener('change', () => {
@@ -513,12 +544,15 @@ async function detect() {
   };
   state.detecting = true;
   refreshEnabled();
+  startLiveDetect(args.stripFrom, args.stripTo);
   setBar('#det-bar', 0, 1);
   $('#det-status').textContent = 'Starting…';
   try {
     const r = await call('detect.run', args);
     applyFrames(r.frames, []);
-    const msg = r.found < 0 ? 'Detection cancelled' : `Found ${r.found.toLocaleString()} frames`;
+    const msg = r.found < 0 ? 'Detection cancelled'
+      : `Found ${r.found.toLocaleString()} frames · ${r.read.toLocaleString()} previews read` +
+        (r.missing ? ` · ${r.missing.toLocaleString()} missing in ${r.previewFolder}` : '');
     $('#det-status').textContent = msg;
     setBar('#det-bar', 1, 1);
     status(msg);
@@ -526,12 +560,43 @@ async function detect() {
     $('#det-status').textContent = err.message;
     toast(err.message, 'error');
   } finally {
+    // Whatever happened, the host's list is the truth: show it again.
+    if (liveDetect && state.session) view.setFrames(state.session.frames, []);
+    liveDetect = null;
     state.detecting = false;
     refreshEnabled();
   }
 }
 
+// Live detection: frames outside the range stay, frames inside are replaced as they are found.
+let liveDetect = null;   // { base: frames outside the range, found: detected so far, from, to }
+
+function startLiveDetect(fromStrip, toStrip) {
+  if (!$('#det-live').checked) { liveDetect = null; return; }
+  const ll = state.session.roll.lengthLines;
+  const base = view.frames.filter((f) => {
+    const s = Math.floor(f.leadEdge / ll);
+    return s < fromStrip || s > toStrip;
+  });
+  liveDetect = { base, found: [] };
+  view.setFrames(base, []);
+}
+
+function showLiveDetect(p) {
+  if (!liveDetect || !p.frames) return;
+  liveDetect.found.length = Math.min(liveDetect.found.length, p.fromIndex);
+  liveDetect.found.push(...p.frames);
+  const shown = liveDetect.base.concat(liveDetect.found).sort((a, b) => a.leadEdge - b.leadEdge || a.trailEdge - b.trailEdge);
+  view.setFrames(shown, []);
+  $('#stat-frames').textContent = shown.length.toLocaleString();
+  // follow: keep the strip being scanned on screen
+  const page = Math.floor(p.stripIndex / Math.max(1, view.perPage));
+  if (page !== view.page) view.gotoPage(page);
+  scrubber.invalidate();
+}
+
 on('detect.progress', (p) => {
+  showLiveDetect(p);
   setBar('#det-bar', p.currentStrip, p.totalStrips);
   $('#det-status').textContent =
     `Strip ${p.currentStrip.toLocaleString()} of ${p.totalStrips.toLocaleString()} · ${p.framesFound.toLocaleString()} frames` +
@@ -765,6 +830,23 @@ const commands = {
     return frameCommand('frames.toggleSuggested', { index: sel[0] });
   },
   undo,
+  suggest: () => suggest(0),
+  suggestStart: () => suggest(-1),
+  suggestEnd: () => suggest(1),
+  selectSuggested: () => {
+    const idx = view.frames.map((f, i) => (f.isSuggested ? i : -1)).filter((i) => i >= 0);
+    if (!idx.length) { toast('No suggested folder starts.'); return; }
+    view.setFrames(view.frames, idx);
+    refreshFramesPanel();
+    scrubber.invalidate();
+  },
+  acceptSuggested: () => markerTool('markers.acceptSuggested', {}, 'Turned into folder markers'),
+  clearSuggested: () => markerTool('markers.clearSuggested', {}, 'Cleared suggestions'),
+  clearSelectedSuggested: () => markerTool('markers.clearSuggested', { selectedOnly: true, indices: selection() }, 'Cleared selected suggestions'),
+  clearEveryBack: () => markerTool('markers.clearSuggestedEvery', { anchor: anchor(), direction: -1, every: Number($('#sug-every').value) || 2 }, 'Cleared suggestions'),
+  clearEveryFwd: () => markerTool('markers.clearSuggestedEvery', { anchor: anchor(), direction: 1, every: Number($('#sug-every').value) || 2 }, 'Cleared suggestions'),
+  clearMarkersBack: () => markerTool('markers.clearToward', { anchor: anchor(), direction: -1 }, 'Cleared markers'),
+  clearMarkersFwd: () => markerTool('markers.clearToward', { anchor: anchor(), direction: 1 }, 'Cleared markers'),
   theme: async () => {
     const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
     applyTheme(next);

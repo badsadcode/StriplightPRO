@@ -338,3 +338,58 @@ public class ArchiveNamingRealDataTests
         Assert.Equal(P("OUT", "00003", "gray00002.jpg"), ExportNaming.PathForFrame(frames, 5, q).FullPath);
     }
 }
+
+public class MarkerSuggesterTests
+{
+    // Regular frames with small gaps, and a few big gaps where folders start.
+    private static List<FrameRecord> Roll()
+    {
+        var frames = new List<FrameRecord>();
+        long pos = 0;
+        for (int i = 0; i < 40; i++)
+        {
+            long gap = i is 10 or 25 ? 3000 : 60 + (i % 3) * 10;
+            pos += gap;
+            frames.Add(new FrameRecord { Index = i, LeadEdge = pos, TrailEdge = pos + 2500, LeftEdge = 0, RightEdge = 100 });
+            pos += 2500;
+        }
+        return frames;
+    }
+
+    [Fact]
+    public void SuggestsFramesAfterBigGaps()
+    {
+        var f = Roll();
+        var r = MarkerSuggester.Suggest(f);
+        Assert.Equal(2, r.Suggested);
+        Assert.True(f[10].IsSuggested && f[25].IsSuggested);
+        Assert.Equal(2, f.Count(x => x.IsSuggested));
+    }
+
+    [Fact]
+    public void BeforeGapAndDirectionAndMarkers()
+    {
+        var f = Roll();
+        MarkerSuggester.Suggest(f, beforeGap: true);
+        Assert.True(f[9].IsSuggested && f[24].IsSuggested);
+
+        f = Roll();
+        MarkerSuggester.Suggest(f, direction: 1, anchor: 15);
+        Assert.False(f[10].IsSuggested);
+        Assert.True(f[25].IsSuggested);
+
+        f = Roll();
+        f[25].IsMarker = true;               // already a folder: no suggestion next to it
+        MarkerSuggester.Suggest(f);
+        Assert.False(f[25].IsSuggested);
+        Assert.Equal(1, MarkerSuggester.ClearMarkersToward(f, 20, 1));
+    }
+
+    [Fact]
+    public void ClearEveryNth()
+    {
+        var f = Roll();
+        foreach (var x in f) x.IsSuggested = true;
+        Assert.Equal(5, MarkerSuggester.ClearSuggestedEvery(f, 29, 1, 2)); // 10 after the anchor, every 2nd
+    }
+}

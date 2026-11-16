@@ -16,9 +16,20 @@ public sealed record DetectOptions
     public int MergeAcrossGaps { get; init; }    // full-res line gap allowed between runs
     public int LeftInsetPx { get; init; }        // full-res pixels ignored from preview X start
     public int RightInsetPx { get; init; }       // full-res pixels ignored from preview X end
+    /// <summary>
+    /// Optional 256-entry tone curve applied before thresholding. When set, it replaces the
+    /// Brightness/Contrast/Gamma formula, so detection sees exactly what the strip view shows.
+    /// </summary>
+    public byte[]? ToneLut { get; init; }
 }
 
-public sealed record DetectProgress(int CurrentStrip, int TotalStrips, int StripsRead, int StripsMissing, int FramesFound);
+/// <summary>
+/// Progress after one strip. <see cref="NewFrames"/> holds copies of the frames from index
+/// <see cref="FromIndex"/> to the end (the last earlier frame is included again because a
+/// frame can grow into the next strip), so a live view can follow the detection.
+/// </summary>
+public sealed record DetectProgress(int CurrentStrip, int TotalStrips, int StripsRead, int StripsMissing, int FramesFound,
+    int StripIndex = 0, int FromIndex = 0, IReadOnlyList<FrameRecord>? NewFrames = null);
 
 /// <summary>
 /// Preview-based frame detection (port of lazarus/uFrameDetect.pas). Detection applies
@@ -39,8 +50,8 @@ public static class FrameDetector
         int to = Math.Clamp(options.StripTo, 0, roll.StripCount - 1);
         if (to < from) return frames;
 
-        var lumLut = BuildLumLut(options);
-        int total = to - from + 1, read = 0, missing = 0, cur = 0;
+        var lumLut = options.ToneLut is { Length: 256 } t ? t.Select(b => (int)b).ToArray() : BuildLumLut(options);
+        int total = to - from + 1, read = 0, missing = 0, cur = 0, reported = 0;
 
         for (int strip = from; strip <= to; strip++)
         {
@@ -57,7 +68,13 @@ public static class FrameDetector
                 read++;
                 DetectInStrip(roll, options, strip, img, lumLut, frames);
             }
-            progress?.Report(new DetectProgress(cur, total, read, missing, frames.Count));
+            if (progress is not null)
+            {
+                int fromIdx = Math.Max(0, reported - 1);
+                var slice = frames.Skip(fromIdx).Select(f => f.Clone()).ToList();
+                reported = frames.Count;
+                progress.Report(new DetectProgress(cur, total, read, missing, frames.Count, strip, fromIdx, slice));
+            }
         }
         return frames;
     }

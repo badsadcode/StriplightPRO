@@ -181,6 +181,49 @@ public sealed class AppController
             FrameEditor.ToggleSuggested(_project.Frames, BridgeHost.Arg(args, "index", -1));
             return Changed(args);
         });
+        // Folder-marker suggestions (Lazarus "Suggest Markers" and the suggested clean-up tools).
+        _bridge.On("markers.suggest", args =>
+        {
+            PushUndo();
+            var r = MarkerSuggester.Suggest(_project.Frames,
+                Math.Clamp(BridgeHost.Arg(args, "strictness", MarkerSuggester.StrictnessDefault), MarkerSuggester.StrictnessMin, MarkerSuggester.StrictnessMax),
+                BridgeHost.Arg(args, "beforeGap", false), BridgeHost.Arg(args, "direction", 0), BridgeHost.Arg(args, "anchor", -1));
+            Changed(args);
+            return new { frames = _project.Frames, suggested = r.Suggested, threshold = r.GapThreshold };
+        });
+        _bridge.On("markers.clearSuggested", args =>
+        {
+            PushUndo();
+            bool selectedOnly = BridgeHost.Arg(args, "selectedOnly", false);
+            int n = MarkerSuggester.ClearSuggested(_project.Frames, selectedOnly ? Indices(args) : null);
+            Changed(args);
+            return new { frames = _project.Frames, count = n };
+        });
+        _bridge.On("markers.clearSuggestedEvery", args =>
+        {
+            PushUndo();
+            int n = MarkerSuggester.ClearSuggestedEvery(_project.Frames, BridgeHost.Arg(args, "anchor", -1),
+                BridgeHost.Arg(args, "direction", 1), BridgeHost.Arg(args, "every", 2));
+            Changed(args);
+            return new { frames = _project.Frames, count = n };
+        });
+        _bridge.On("markers.clearToward", args =>
+        {
+            PushUndo();
+            int n = MarkerSuggester.ClearMarkersToward(_project.Frames, BridgeHost.Arg(args, "anchor", -1), BridgeHost.Arg(args, "direction", 1));
+            Changed(args);
+            return new { frames = _project.Frames, count = n };
+        });
+        _bridge.On("markers.acceptSuggested", args =>
+        {
+            // Turn every suggestion into a folder marker (same as Select suggested + A).
+            PushUndo();
+            int n = 0;
+            foreach (var f in _project.Frames.Where(f => f.IsSuggested)) { f.IsMarker = true; f.IsSuggested = false; n++; }
+            Changed(args);
+            return new { frames = _project.Frames, count = n };
+        });
+
         _bridge.On("frames.undo", args =>
         {
             if (_undo.Count == 0) throw new BridgeException("Nothing to undo.");
@@ -582,10 +625,13 @@ public sealed class AppController
         {
             StripFrom = d.StripFrom, StripTo = to,
             MinWidthPx = d.MinWidth, MinHeightPx = d.MinLength, Threshold = d.Threshold,
-            // Like the Lazarus edition, detection sees the Striplight-range tone sliders.
-            Brightness = d.UseToneSliders && !ToneAdjust.UsesQuantumRanges(tone.Method) ? tone.Brightness : 0,
-            Contrast = d.UseToneSliders && !ToneAdjust.UsesQuantumRanges(tone.Method) ? tone.Contrast : 0,
-            Gamma = d.UseToneSliders && !ToneAdjust.UsesQuantumRanges(tone.Method) ? Math.Clamp(tone.Gamma, 10, 300) : 100,
+            // Detection sees what the strip view shows: the same tone curve (method, sliders,
+            // rescue curves). Tune for white frames on a black background, then detect.
+            // With "Striplight current" this is identical to the Lazarus detection formula.
+            ToneLut = d.UseToneSliders
+                ? ToneAdjust.BuildLut(ToneAdjust.IsAdaptive(tone.Method) ? ToneMethod.Striplight : tone.Method,
+                    tone.Flags, tone.Contrast, tone.Brightness, tone.Gamma)
+                : null,
             MergeAcrossGaps = roll.LengthLines / 64,
             LeftInsetPx = d.LeftInset, RightInsetPx = d.RightInset,
         };
@@ -596,13 +642,27 @@ public sealed class AppController
         var rollCopy = roll.Clone();
         _detectCts = new CancellationTokenSource();
         long lastEmit = 0;
+        var live = new List<FrameRecord>();   // frames detected so far (copies)
+        int sent = 0;                          // how many of them the page already has
         var progress = new Progress<DetectProgress>(p =>
         {
-            // Long rolls have thousands of strips: send at most ~20 updates a second.
+            if (p.NewFrames is not null)
+            {
+                live.RemoveRange(p.FromIndex, live.Count - p.FromIndex);
+                live.AddRange(p.NewFrames);
+            }
+            // Long rolls have thousands of strips: send at most ~10 updates a second, each with
+            // the frames the page has not seen yet (plus the last one again, it may have grown).
             long now = Environment.TickCount64;
-            if (now - lastEmit < 50 && p.CurrentStrip < p.TotalStrips) return;
+            if (now - lastEmit < 100 && p.CurrentStrip < p.TotalStrips) return;
             lastEmit = now;
-            _bridge.Emit("detect.progress", p);
+            int fromIdx = Math.Max(0, Math.Min(sent, live.Count) - 1);
+            _bridge.Emit("detect.progress", new
+            {
+                p.CurrentStrip, p.TotalStrips, p.StripsRead, p.StripsMissing, p.FramesFound, p.StripIndex,
+                fromIndex = fromIdx, frames = live.Skip(fromIdx).ToList(),
+            });
+            sent = live.Count;
         });
         try
         {
@@ -617,7 +677,16 @@ public sealed class AppController
             FrameEditor.ReplaceDetectedRange(_project.Frames, found, options.StripFrom, options.StripTo, roll.LengthLines);
             MarkDirty();
             _bridge.Emit("frames.changed", new { source = "main" });
-            return new { frames = _project.Frames, found = found.Count };
+            // Read vs. missing previews make path problems visible (e.g. previews on another share).
+            int read = 0, missing = 0;
+            for (int i = options.StripFrom; i <= options.StripTo; i++)
+                if (File.Exists(RollPaths.PreviewFilePath(rollCopy, i))) read++; else missing++;
+            return new
+            {
+                frames = _project.Frames, found = found.Count, read, missing,
+                previewFolder = Path.GetDirectoryName(RollPaths.PreviewFilePath(rollCopy, options.StripFrom)),
+                threshold = options.Threshold,
+            };
         }
         catch (OperationCanceledException)
         {

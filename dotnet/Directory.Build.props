@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Company>Bad Ideas Works</Company>
     <Product>Striplight PRO</Product>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
     <!-- Lets the WPF project build (not run) on Linux/macOS build agents. -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
