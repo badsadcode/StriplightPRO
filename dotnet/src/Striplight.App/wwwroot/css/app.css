@@ -695,5 +695,4 @@ mark.hit { background: rgba(245,165,36,.45); color: inherit; border-radius: 2px;
 .cache-queue .q-status { color: var(--text-2); white-space: nowrap; }
 
 /* roll overview tooltip */
-.viewer-foot { position: relative; }
 .scrub-tip { position: absolute; z-index: 5; pointer-events: none; padding: 4px 9px; border-radius: 7px; background: var(--toast-bg, var(--surface-3)); border: 1px solid var(--border-2); box-shadow: var(--shadow); color: var(--text); font-size: 12px; white-space: nowrap; }
