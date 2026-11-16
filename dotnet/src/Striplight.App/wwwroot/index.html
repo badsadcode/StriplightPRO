@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Striplight PRO</title>
+  <link rel="stylesheet" href="vendor/toastui/toastui-editor.css">
+  <link rel="stylesheet" href="vendor/toastui/toastui-editor-dark.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand" title="Striplight PRO">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">Striplight<b>PRO</b></span>
+    </div>
+
+    <div class="tool-group" role="group" aria-label="File">
+      <button data-cmd="open" title="Open roll (Ctrl+O)">Open</button>
+      <button data-cmd="save" data-needs-roll title="Save project (Ctrl+S)">Save</button>
+      <button data-cmd="saveAs" data-needs-roll title="Save as SLF or QPF (Ctrl+Shift+S)">Save as…</button>
+    </div>
+
+    <div class="roll-title" id="roll-title">
+      <span class="roll-name">No roll open</span>
+      <span class="dirty-dot" id="dirty-dot" title="Unsaved changes" hidden></span>
+    </div>
+
+    <div class="tool-group" role="group" aria-label="Pages">
+      <button data-cmd="first" data-needs-roll title="First page (Home)" aria-label="First page">⏮</button>
+      <button data-cmd="prev" data-needs-roll title="Previous page (Page Up)" aria-label="Previous page">◀</button>
+      <label class="page-box" title="Go to page">
+        <input id="page-input" type="number" min="1" value="1" data-needs-roll>
+        <span id="page-count">/ 0</span>
+      </label>
+      <button data-cmd="next" data-needs-roll title="Next page (Page Down)" aria-label="Next page">▶</button>
+      <button data-cmd="last" data-needs-roll title="Last page (End)" aria-label="Last page">⏭</button>
+    </div>
+
+    <div class="tool-group" role="group" aria-label="View">
+      <label class="mini-field" title="Strips per row">
+        <span>Row</span>
+        <input id="strips-per-row" type="number" min="1" max="20" value="4">
+      </label>
+      <label class="mini-field zoom" title="Zoom (Ctrl + mouse wheel)">
+        <span>Zoom</span>
+        <input id="zoom" type="range" min="25" max="400" step="5" value="100">
+        <output id="zoom-out">100%</output>
+      </label>
+      <label class="toggle" title="Source orientation: clockwise + mirror instead of counter-clockwise">
+        <input id="rotate-cw" type="checkbox"><span>CW</span>
+      </label>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <section class="viewer" id="viewer">
+      <canvas id="strip-canvas" tabindex="0" aria-label="Strip view"></canvas>
+      <div class="empty-state" id="empty-state">
+        <div class="empty-card">
+          <h1>Open a roll to begin</h1>
+          <p>Striplight reads QuantumScan <code>.idf</code> rolls, <code>.qpf</code> projects and its own <code>.slf</code> projects.</p>
+          <button class="primary" data-cmd="open">Open roll…</button>
+          <ul class="recent" id="recent-list"></ul>
+        </div>
+      </div>
+      <div class="legend" id="legend" hidden>
+        <span><i class="sw normal"></i>Frame</span>
+        <span><i class="sw abnormal"></i>Odd size</span>
+        <span><i class="sw marker"></i>Folder marker</span>
+        <span><i class="sw suggested"></i>Suggested</span>
+        <span><i class="sw selected"></i>Selected</span>
+        <span><i class="sw exported"></i>Exported</span>
+      </div>
+      <menu class="context-menu" id="context-menu" hidden>
+        <li><button data-ctx="preview">Preview frame <kbd>Enter</kbd></button></li>
+        <li><button data-ctx="marker">Toggle folder marker <kbd>M</kbd></button></li>
+        <li><button data-ctx="clearOverrides">Clear per-frame settings</button></li>
+        <li class="sep"></li>
+        <li><button data-ctx="delete" class="danger">Delete <kbd>Del</kbd></button></li>
+      </menu>
+    </section>
+
+    <aside class="sidebar">
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="frames" aria-selected="true">Frames</button>
+        <button role="tab" data-tab="detect">Detect</button>
+        <button role="tab" data-tab="process">Process</button>
+        <button role="tab" data-tab="export">Export</button>
+        <button role="tab" data-tab="notes">Notes</button>
+      </nav>
+
+      <!-- ===================== Frames ===================== -->
+      <section class="panel" data-panel="frames">
+        <div class="stat-row">
+          <div class="stat"><span class="stat-value" id="stat-frames">0</span><span class="stat-label">frames</span></div>
+          <div class="stat"><span class="stat-value" id="stat-markers">0</span><span class="stat-label">folders</span></div>
+          <div class="stat"><span class="stat-value" id="stat-abnormal">0</span><span class="stat-label">odd size</span></div>
+          <div class="stat"><span class="stat-value" id="stat-selected">0</span><span class="stat-label">selected</span></div>
+        </div>
+
+        <fieldset>
+          <legend>Selection</legend>
+          <div class="btn-grid">
+            <button data-cmd="selectAll" data-needs-roll>Select all <kbd>Ctrl A</kbd></button>
+            <button data-cmd="selectPage" data-needs-roll>Select page</button>
+            <button data-cmd="selectNone" data-needs-roll>Select none <kbd>Esc</kbd></button>
+            <button data-cmd="nextAbnormal" data-needs-roll>Next odd-size frame</button>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Edit</legend>
+          <div class="btn-grid">
+            <button data-cmd="toggleMarker" data-needs-sel>Toggle folder marker <kbd>M</kbd></button>
+            <button data-cmd="previewFrame" data-needs-sel>Preview frame <kbd>Enter</kbd></button>
+            <button data-cmd="deleteSelected" data-needs-sel class="danger">Delete selected <kbd>Del</kbd></button>
+            <button data-cmd="clearMarkers" data-needs-roll>Clear all markers</button>
+          </div>
+          <p class="hint">Drag a frame to move it, drag its edges to resize, drag on empty film to draw a new frame. Ctrl-click adds to the selection, Shift-click selects a range.</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>Per-frame orientation</legend>
+          <div class="field-row">
+            <label>Rotate
+              <select id="ovr-rotation"><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select>
+            </label>
+            <label class="check"><input type="checkbox" id="ovr-mirror"> Mirror</label>
+            <label class="check"><input type="checkbox" id="ovr-negative"> Negative</label>
+          </div>
+          <div class="btn-grid">
+            <button data-cmd="applyOverride" data-needs-sel>Apply to selected</button>
+            <button data-cmd="clearOverrides" data-needs-sel>Clear on selected</button>
+          </div>
+        </fieldset>
+
+        <div class="frame-info" id="frame-info"></div>
+      </section>
+
+      <!-- ===================== Detect ===================== -->
+      <section class="panel" data-panel="detect" hidden>
+        <fieldset>
+          <legend>Frame detection</legend>
+          <p class="hint">Finds bright frames on the dark film using the preview strips. Frames that start inside the strip range are replaced.</p>
+          <div class="field-grid">
+            <label>Threshold <input type="number" id="det-threshold" min="1" max="254" value="100"></label>
+            <label>Min width (px) <input type="number" id="det-minw" min="1" value="252"></label>
+            <label>Min length (px) <input type="number" id="det-minl" min="1" value="252"></label>
+            <label>From strip <input type="number" id="det-from" min="1" value="1"></label>
+            <label>To strip <input type="number" id="det-to" min="1" value="1"></label>
+            <label>Ignore top (px) <input type="number" id="det-left" min="0" value="0"></label>
+            <label>Ignore bottom (px) <input type="number" id="det-right" min="0" value="0"></label>
+          </div>
+          <label class="check"><input type="checkbox" id="det-tone" checked> Apply Process brightness / contrast / gamma during detection</label>
+          <div class="btn-row">
+            <button class="primary" data-cmd="detect" data-needs-roll id="det-run">Detect frames</button>
+            <button data-cmd="detectCancel" id="det-cancel" disabled>Cancel</button>
+          </div>
+          <progress id="det-progress" max="1" value="0"></progress>
+          <div class="status-line" id="det-status"></div>
+        </fieldset>
+      </section>
+
+      <!-- ===================== Process ===================== -->
+      <section class="panel" data-panel="process" hidden>
+        <fieldset>
+          <legend>Tone</legend>
+          <label class="wide">Method <select id="tone-method"></select></label>
+          <div class="slider" data-key="contrast"><span>Contrast</span><input type="range"><input type="number"></div>
+          <div class="slider" data-key="brightness"><span>Brightness</span><input type="range"><input type="number"></div>
+          <div class="slider" data-key="gamma"><span>Gamma</span><input type="range"><input type="number"></div>
+          <div class="slider" data-key="strength"><span>Strength</span><input type="range" min="0" max="100"><input type="number" min="0" max="100"></div>
+          <div class="check-grid" id="tone-flags">
+            <label class="check"><input type="checkbox" value="1"> Shadow lift</label>
+            <label class="check"><input type="checkbox" value="2"> Highlight recovery</label>
+            <label class="check"><input type="checkbox" value="4"> S-curve</label>
+            <label class="check"><input type="checkbox" value="8"> Document rescue</label>
+            <label class="check"><input type="checkbox" value="16"> Soft contrast</label>
+          </div>
+          <div class="btn-row">
+            <button data-cmd="toneReset">Reset to neutral</button>
+            <label class="check"><input type="checkbox" id="tone-on-strips" checked> Show on strips</label>
+          </div>
+          <p class="hint" id="tone-hint"></p>
+        </fieldset>
+
+        <fieldset>
+          <legend>Sharpen (export &amp; frame preview)</legend>
+          <label class="wide">Mode
+            <select id="sharp-mode"><option value="0">Soft</option><option value="1">Unsharp</option><option value="2">Text crisp</option><option value="3">High-pass strong</option></select>
+          </label>
+          <div class="slider" data-key="sharpness"><span>Amount</span><input type="range" min="0" max="100"><input type="number" min="0" max="100"></div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Orientation (all frames)</legend>
+          <div class="field-row">
+            <label>Rotate
+              <select id="proc-rotation"><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select>
+            </label>
+            <label class="check"><input type="checkbox" id="proc-mirror"> Mirror</label>
+            <label class="check"><input type="checkbox" id="proc-negative"> Negative</label>
+          </div>
+        </fieldset>
+      </section>
+
+      <!-- ===================== Export ===================== -->
+      <section class="panel" data-panel="export" hidden>
+        <fieldset>
+          <legend>Destination</legend>
+          <label class="wide">Output folder
+            <span class="input-with-btn">
+              <input type="text" id="exp-root" placeholder="frames folder next to the project">
+              <button data-cmd="pickFolder" title="Browse">…</button>
+              <button data-cmd="openFolder" title="Open in Explorer">↗</button>
+            </span>
+          </label>
+          <label class="wide">Naming
+            <select id="exp-mode"><option value="0">Quantum folders (one folder per marker)</option><option value="1">Archive list (one row per marker)</option></select>
+          </label>
+          <div class="field-grid" id="exp-quantum">
+            <label>File prefix <input type="text" id="exp-prefix" placeholder="(none)"></label>
+            <label>Digits <input type="number" id="exp-digits" min="1" max="12" value="5"></label>
+            <label class="check"><input type="checkbox" id="exp-sep" checked> Folder per marker</label>
+          </div>
+          <label class="wide" id="exp-archive-wrap" hidden>Archive list <small>(parts separated by <code>;</code> become folders and the file name)</small>
+            <textarea id="exp-archive" rows="6" spellcheck="false" placeholder="Box 1;Folder A&#10;Box 1;Folder B"></textarea>
+          </label>
+          <div class="path-preview" id="exp-example"></div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Output</legend>
+          <div class="field-grid">
+            <label>JPEG quality <input type="number" id="exp-quality" min="1" max="100" value="100"></label>
+            <label>Workers <input type="number" id="exp-workers" min="1" max="32" value="4"></label>
+            <label>Strip cache <input type="number" id="exp-cache" min="2" max="64" value="8"></label>
+          </div>
+          <div class="check-grid">
+            <label class="check"><input type="checkbox" id="exp-progressive"> Progressive JPEG</label>
+            <label class="check"><input type="checkbox" id="exp-skip"> Skip existing files</label>
+            <label class="check"><input type="checkbox" id="exp-fallback"> Use previews when strips are missing</label>
+            <label class="check"><input type="checkbox" id="exp-temp"> Stage through local temp (network shares)</label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Run</legend>
+          <div class="field-row">
+            <label class="check"><input type="radio" name="exp-scope" value="all" checked> All frames</label>
+            <label class="check"><input type="radio" name="exp-scope" value="selected"> Selected frames</label>
+          </div>
+          <div class="btn-row">
+            <button class="primary" data-cmd="exportStart" data-needs-roll id="exp-start">Export</button>
+            <button data-cmd="exportPause" id="exp-pause" disabled>Pause</button>
+            <button data-cmd="exportStop" id="exp-stop" disabled>Stop</button>
+          </div>
+          <progress id="exp-progress" max="1" value="0"></progress>
+          <div class="status-line" id="exp-status"></div>
+          <ul class="failures" id="exp-failures"></ul>
+        </fieldset>
+      </section>
+
+      <!-- ===================== Notes ===================== -->
+      <section class="panel panel-notes" data-panel="notes" hidden>
+        <div class="notes-head">
+          <span>Roll notes</span>
+          <small>Markdown, saved in the .slf project</small>
+        </div>
+        <div id="notes-editor"></div>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="statusbar">
+    <span id="status-main">Ready</span>
+    <span class="spacer"></span>
+    <span id="status-hover"></span>
+    <span id="status-engine" class="muted"></span>
+  </footer>
+
+  <!-- Frame preview: the exact frame the export would write -->
+  <div class="modal" id="frame-modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="frame-modal-title">
+      <header>
+        <h2 id="frame-modal-title">Frame</h2>
+        <span class="muted" id="frame-modal-path"></span>
+        <span class="spacer"></span>
+        <button data-cmd="modalPrev" title="Previous frame (←)" aria-label="Previous frame">◀</button>
+        <button data-cmd="modalNext" title="Next frame (→)" aria-label="Next frame">▶</button>
+        <button data-cmd="modalMarker" title="Toggle folder marker (M)">Marker</button>
+        <button data-cmd="modalClose" title="Close (Esc)" aria-label="Close">✕</button>
+      </header>
+      <div class="modal-body">
+        <img id="frame-modal-img" alt="">
+        <div class="modal-loading" id="frame-modal-loading">Building frame…</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-host" id="toast-host" aria-live="polite"></div>
+
+  <script src="vendor/toastui/toastui-editor.bundle.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

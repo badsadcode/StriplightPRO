@@ -1,0 +1,14 @@
+{
+  "name": "striplight-web-vendor",
+  "private": true,
+  "description": "Builds the vendored TOAST UI Editor (with its ProseMirror dependencies) into wwwroot/vendor/toastui. Only needed when updating the editor; the built files are committed.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@toast-ui/editor": "3.2.2"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10"
+  }
+}

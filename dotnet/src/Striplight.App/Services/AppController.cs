@@ -1,0 +1,514 @@
+using System.IO;
+using System.Reflection;
+using System.Text.Json;
+using System.Windows;
+using Microsoft.Win32;
+using Striplight.App.Bridge;
+using Striplight.Core.Detection;
+using Striplight.Core.Editing;
+using Striplight.Core.Export;
+using Striplight.Core.Imaging;
+using Striplight.Core.IO;
+using Striplight.Core.Model;
+
+namespace Striplight.App.Services;
+
+/// <summary>
+/// Owns the open project and implements every bridge command. All methods run on the
+/// UI thread; long work (detection, export) runs on the thread pool with private copies.
+/// </summary>
+public sealed class AppController
+{
+    private readonly Window _owner;
+    private readonly BridgeHost _bridge;
+    private readonly AppSettings _settings = AppSettings.Load();
+
+    private Project _project = new();
+    private string _projectPath = "";
+    private string _idfPath = "";
+    private bool _dirty;
+    private ProcessDto _process = new();
+    private ExportDto _export = new();
+    private int _imageVersion = 1;
+
+    private CancellationTokenSource? _detectCts;
+    private CancellationTokenSource? _exportCts;
+    private ExportEngine? _exportEngine;
+
+    public AppController(Window owner, BridgeHost bridge)
+    {
+        _owner = owner;
+        _bridge = bridge;
+        Register();
+    }
+
+    // ------------------------------------------------------------ state for ImageService
+
+    public RollData Roll => _project.Roll;
+    public bool RotateCw => _settings.RotateCw;
+    public ProcessDto Process => _process;
+    public int FrameCount => _project.Frames.Count;
+    public FrameRecord? SnapshotFrame(int index) =>
+        index >= 0 && index < _project.Frames.Count ? _project.Frames[index].Clone() : null;
+
+    // ------------------------------------------------------------ commands
+
+    private void Register()
+    {
+        _bridge.On("app.init", _ => new
+        {
+            version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.1.0",
+            turboJpeg = TurboJpeg.Status,
+            toneMethods = Enumerable.Range(0, ToneMethod.Count).Select(ToneAdjust.MethodName).ToArray(),
+            settings = _settings,
+            session = _project.Roll.Loaded ? Session() : null,
+        });
+
+        _bridge.On("project.open", args => OpenProject(BridgeHost.Arg(args, "path", "")));
+        _bridge.On("project.save", _ => Save(saveAs: false));
+        _bridge.On("project.saveAs", _ => Save(saveAs: true));
+        _bridge.On("project.close", _ => CloseProject());
+
+        _bridge.On("frames.patch", args =>
+        {
+            foreach (var p in BridgeHost.Arg(args, "changes", new List<FramePatch>()))
+                if (p.Index >= 0 && p.Index < _project.Frames.Count && p.Frame.IsPersistable)
+                    CopyEditable(p.Frame, _project.Frames[p.Index]);
+            FrameEditor.Refresh(_project.Frames); // a drag can change the order
+            return MarkDirtyAndReturnFrames();
+        });
+        _bridge.On("frames.add", args =>
+        {
+            var f = BridgeHost.Arg(args, "frame", new FrameRecord());
+            int idx = FrameEditor.Add(_project.Frames, f);
+            MarkDirty();
+            return new { frames = _project.Frames, index = idx };
+        });
+        _bridge.On("frames.delete", args =>
+        {
+            FrameEditor.Delete(_project.Frames, Indices(args));
+            return MarkDirtyAndReturnFrames();
+        });
+        _bridge.On("frames.toggleMarker", args =>
+        {
+            FrameEditor.ToggleMarker(_project.Frames, Indices(args));
+            return MarkDirtyAndReturnFrames();
+        });
+        _bridge.On("frames.clearMarkers", _ =>
+        {
+            FrameEditor.ClearMarkers(_project.Frames);
+            return MarkDirtyAndReturnFrames();
+        });
+        _bridge.On("frames.clearOverrides", args =>
+        {
+            FrameEditor.ClearOverrides(_project.Frames, Indices(args));
+            return MarkDirtyAndReturnFrames();
+        });
+        _bridge.On("frames.setOverride", args =>
+        {
+            int rotation = BridgeHost.Arg(args, "rotation", 0);
+            bool flipH = BridgeHost.Arg(args, "flipH", false), negative = BridgeHost.Arg(args, "negative", false);
+            foreach (int i in Indices(args))
+            {
+                if (i < 0 || i >= _project.Frames.Count) continue;
+                var f = _project.Frames[i];
+                f.HasOverride = true; f.Rotation = rotation; f.FlipH = flipH; f.FlipV = false; f.Negative = negative;
+            }
+            return MarkDirtyAndReturnFrames();
+        });
+        _bridge.On("frames.clearExported", _ =>
+        {
+            foreach (var f in _project.Frames) f.IsExported = false;
+            return _project.Frames;
+        });
+
+        _bridge.On("process.set", args =>
+        {
+            _process = BridgeHost.Args<ProcessDto>(args);
+            _process.StoreTo(_project.Roll);
+            MarkDirty();
+            return new { imageVersion = ++_imageVersion };
+        });
+        _bridge.On("view.set", args =>
+        {
+            bool rotate = BridgeHost.Arg(args, "rotateCw", _settings.RotateCw);
+            if (rotate != _settings.RotateCw) _imageVersion++;
+            _settings.RotateCw = rotate;
+            _settings.StripsPerRow = Math.Clamp(BridgeHost.Arg(args, "stripsPerRow", _settings.StripsPerRow), 1, 20);
+            _settings.Zoom = Math.Clamp(BridgeHost.Arg(args, "zoom", _settings.Zoom), 0.25, 4.0);
+            _settings.FrameFillOpacity = Math.Clamp(BridgeHost.Arg(args, "frameFillOpacity", _settings.FrameFillOpacity), 0, 100);
+            return new { imageVersion = _imageVersion };
+        });
+        _bridge.On("notes.set", args =>
+        {
+            string md = BridgeHost.Arg(args, "markdown", "");
+            if (md != _project.Notes) { _project.Notes = md; MarkDirty(); }
+            return null;
+        });
+        _bridge.On("export.settings", args =>
+        {
+            _export = BridgeHost.Args<ExportDto>(args);
+            StoreExportToRollAndSettings();
+            return null;
+        });
+
+        _bridge.OnAsync("detect.run", args => RunDetectionAsync(BridgeHost.Args<DetectDto>(args)));
+        _bridge.On("detect.cancel", _ => { _detectCts?.Cancel(); return null; });
+
+        _bridge.On("export.start", args => StartExport(BridgeHost.Args<ExportDto>(args)));
+        _bridge.On("export.preview", args => PreviewExportPath(BridgeHost.Arg(args, "index", 0), BridgeHost.Args<ExportDto>(args)));
+        _bridge.On("export.pause", _ => { _exportEngine?.Pause(); return null; });
+        _bridge.On("export.resume", _ => { _exportEngine?.Resume(); return null; });
+        _bridge.On("export.cancel", _ => { _exportEngine?.Resume(); _exportCts?.Cancel(); return null; });
+
+        _bridge.On("dialog.pickFolder", args =>
+        {
+            var dlg = new OpenFolderDialog { Title = "Choose output folder" };
+            string initial = BridgeHost.Arg(args, "initial", "");
+            if (Directory.Exists(initial)) dlg.InitialDirectory = initial;
+            return dlg.ShowDialog(_owner) == true ? dlg.FolderName : null;
+        });
+        _bridge.On("shell.openFolder", args => { Shell.OpenFolder(BridgeHost.Arg(args, "path", "")); return null; });
+        _bridge.On("shell.openUrl", args => { Shell.OpenUrl(BridgeHost.Arg(args, "url", "")); return null; });
+    }
+
+    private static List<int> Indices(JsonElement args) => BridgeHost.Arg(args, "indices", new List<int>());
+
+    /// <summary>Copies the fields the page may edit; flags computed here (oversize etc.) are left alone.</summary>
+    private static void CopyEditable(FrameRecord src, FrameRecord dst)
+    {
+        dst.LeadEdge = src.LeadEdge; dst.TrailEdge = src.TrailEdge;
+        dst.LeftEdge = src.LeftEdge; dst.RightEdge = src.RightEdge;
+        dst.IsMarker = src.IsMarker; dst.IsSuggested = src.IsSuggested;
+    }
+
+    private void MarkDirty()
+    {
+        if (_dirty) return;
+        _dirty = true;
+        _bridge.Emit("project.dirty", true);
+    }
+
+    private object MarkDirtyAndReturnFrames()
+    {
+        MarkDirty();
+        return _project.Frames;
+    }
+
+    private SessionDto Session() => new(
+        _project.Roll, _project.Frames, _project.Notes, _projectPath, _idfPath,
+        ExportNaming.DefaultOutputRoot(ProjectRootPath, _project.Roll),
+        _process, _export, _imageVersion, _dirty);
+
+    private string ProjectRootPath => _projectPath != "" ? _projectPath : _idfPath;
+
+    // ------------------------------------------------------------ open / save
+
+    private object? OpenProject(string path)
+    {
+        if (!ConfirmDiscardOrSave("opening another roll")) return null;
+        if (string.IsNullOrEmpty(path))
+        {
+            var dlg = new OpenFileDialog
+            {
+                Title = "Open roll",
+                Filter = "Striplight rolls (*.slf;*.idf;*.qpf)|*.slf;*.idf;*.qpf|Striplight project (*.slf)|*.slf|" +
+                         "QuantumScan roll (*.idf)|*.idf|QuantumScan project (*.qpf)|*.qpf|All files (*.*)|*.*",
+            };
+            if (Directory.Exists(_settings.LastFolder)) dlg.InitialDirectory = _settings.LastFolder;
+            if (dlg.ShowDialog(_owner) != true) return null;
+            path = dlg.FileName;
+        }
+        if (!File.Exists(path)) throw new BridgeException("File not found: " + path);
+
+        string ext = Path.GetExtension(path).ToLowerInvariant();
+        Project project;
+        string projectPath = "", idfPath = "";
+        if (ext == ".idf")
+        {
+            idfPath = path;
+            // A Striplight project saved next to the IDF wins: it holds the edited frames.
+            string slf = ProjectFile.SlfPathForIdf(path);
+            if (File.Exists(slf) && ProjectFile.TryLoadProject(slf, out project))
+            {
+                projectPath = slf;
+                _bridge.Emit("toast", $"Opened the saved project {Path.GetFileName(slf)} for this roll.");
+            }
+            else
+            {
+                var r = IdfParser.Parse(path, out var roll, out var frames);
+                if (r != IdfParseResult.Ok) throw new BridgeException(IdfParser.Message(r));
+                project = new Project { Roll = roll, Frames = frames, SourceIdfPath = path };
+            }
+        }
+        else
+        {
+            if (!ProjectFile.TryLoadProject(path, out project))
+                throw new BridgeException("Could not read the project file " + Path.GetFileName(path) + ".");
+            if (ext == ".slf") projectPath = path;
+            idfPath = File.Exists(project.SourceIdfPath) ? project.SourceIdfPath : "";
+        }
+
+        // Strips live next to the IDF. If the project was saved elsewhere, look there.
+        if (idfPath != "")
+        {
+            string idfDir = RollPaths.WithTrailingSeparator(Path.GetDirectoryName(Path.GetFullPath(idfPath))!);
+            project.Roll.BasePath = idfDir;
+            project.Roll.PreviewBasePath = idfDir;
+            project.Roll.PreviewSourceBasePath = idfDir;
+            if (project.Roll.StripCount <= 0 && IdfParser.Parse(idfPath, out var idfRoll, out _) == IdfParseResult.Ok)
+                project.Roll.StripCount = idfRoll.StripCount;
+        }
+        project.Roll.Loaded = true;
+        FrameEditor.Refresh(project.Frames);
+
+        _project = project;
+        _projectPath = projectPath;
+        _idfPath = idfPath;
+        _dirty = false;
+        _process = ProcessDto.FromRoll(project.Roll);
+        _export = ExportFromSettings(project.Roll);
+        _imageVersion++;
+        _settings.LastFolder = Path.GetDirectoryName(Path.GetFullPath(path)) ?? "";
+        _settings.AddRecent(path);
+        _settings.Save();
+        return Session();
+    }
+
+    private ExportDto ExportFromSettings(RollData roll) => new()
+    {
+        NamingMode = roll.ExportNamingMode, ArchiveList = roll.ArchiveList, Progressive = roll.ExportProgressive,
+        Prefix = _settings.Prefix, FileDigits = _settings.FileDigits, SeparateFolders = _settings.SeparateFolders,
+        Quality = _settings.Quality, SkipExisting = _settings.SkipExisting,
+        AllowPreviewFallback = _settings.AllowPreviewFallback, LocalTempStage = _settings.LocalTempStage,
+        Workers = _settings.Workers, StripCacheLimit = _settings.StripCacheLimit,
+    };
+
+    private void StoreExportToRollAndSettings()
+    {
+        var r = _project.Roll;
+        if (r.ExportNamingMode != _export.NamingMode || r.ArchiveList != _export.ArchiveList ||
+            r.ExportProgressive != _export.Progressive)
+        {
+            r.ExportNamingMode = _export.NamingMode;
+            r.ArchiveList = _export.ArchiveList;
+            r.ExportProgressive = _export.Progressive;
+            if (r.Loaded) MarkDirty();
+        }
+        _settings.Prefix = _export.Prefix; _settings.FileDigits = _export.FileDigits;
+        _settings.SeparateFolders = _export.SeparateFolders; _settings.Quality = _export.Quality;
+        _settings.SkipExisting = _export.SkipExisting; _settings.AllowPreviewFallback = _export.AllowPreviewFallback;
+        _settings.LocalTempStage = _export.LocalTempStage; _settings.Workers = _export.Workers;
+        _settings.StripCacheLimit = _export.StripCacheLimit;
+    }
+
+    private object? Save(bool saveAs)
+    {
+        if (!_project.Roll.Loaded) throw new BridgeException("Open a roll first.");
+        string target = _projectPath;
+        if (saveAs || target == "")
+        {
+            string suggested = _projectPath != "" ? _projectPath
+                : _idfPath != "" ? ProjectFile.SlfPathForIdf(_idfPath)
+                : Path.Combine(_project.Roll.BasePath, _project.Roll.RollName + ".slf");
+            var dlg = new SaveFileDialog
+            {
+                Title = "Save roll project",
+                Filter = "Striplight project (*.slf)|*.slf|QuantumScan project (*.qpf)|*.qpf",
+                FileName = Path.GetFileName(suggested),
+                InitialDirectory = Path.GetDirectoryName(suggested) ?? "",
+                AddExtension = true,
+            };
+            if (dlg.ShowDialog(_owner) != true) return null;
+            target = dlg.FileName;
+        }
+
+        _process.StoreTo(_project.Roll);
+        string sourceIdf = _idfPath != "" ? _idfPath : _project.SourceIdfPath;
+        if (Path.GetExtension(target).Equals(".qpf", StringComparison.OrdinalIgnoreCase))
+        {
+            // QPF is QuantumScan's format: no notes, no Striplight-only fields. The project stays unsaved as SLF.
+            ProjectFile.SaveQpf(target, sourceIdf, _project);
+            _bridge.Emit("toast", $"Exported QuantumScan project {Path.GetFileName(target)}.");
+            return new { path = target, dirty = _dirty };
+        }
+
+        ProjectFile.SaveSlf(target, sourceIdf, _project);
+        _projectPath = target;
+        _dirty = false;
+        _settings.AddRecent(target);
+        _settings.Save();
+        _bridge.Emit("project.dirty", false);
+        return new { path = target, dirty = false };
+    }
+
+    private object? CloseProject()
+    {
+        if (!ConfirmDiscardOrSave("closing the roll")) return null;
+        _project = new Project();
+        _projectPath = _idfPath = "";
+        _dirty = false;
+        return new { closed = true };
+    }
+
+    /// <summary>Asks to save unsaved changes. Returns false when the user cancels.</summary>
+    public bool ConfirmDiscardOrSave(string action)
+    {
+        if (!_dirty || !_project.Roll.Loaded) return true;
+        var answer = MessageBox.Show(_owner,
+            $"The roll \"{_project.Roll.RollName}\" has unsaved changes.\n\nSave them before {action}?",
+            "Striplight PRO", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+        if (answer == MessageBoxResult.Cancel) return false;
+        if (answer == MessageBoxResult.Yes)
+        {
+            try { return Save(saveAs: false) is not null; }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                MessageBox.Show(_owner, "Saving failed: " + e.Message, "Striplight PRO", MessageBoxButton.OK, MessageBoxImage.Error);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public void Shutdown()
+    {
+        _detectCts?.Cancel();
+        _exportCts?.Cancel();
+        _settings.Save();
+    }
+
+    // ------------------------------------------------------------ detection
+
+    private async Task<object?> RunDetectionAsync(DetectDto d)
+    {
+        var roll = _project.Roll;
+        if (!roll.Loaded) throw new BridgeException("Open a roll first.");
+        if (_detectCts is not null) throw new BridgeException("Detection is already running.");
+
+        int to = d.StripTo < 0 ? roll.StripCount - 1 : d.StripTo;
+        var tone = _process;
+        var options = new DetectOptions
+        {
+            StripFrom = d.StripFrom, StripTo = to,
+            MinWidthPx = d.MinWidth, MinHeightPx = d.MinLength, Threshold = d.Threshold,
+            // Like the Lazarus edition, detection sees the Striplight-range tone sliders.
+            Brightness = d.UseToneSliders && !ToneAdjust.UsesQuantumRanges(tone.Method) ? tone.Brightness : 0,
+            Contrast = d.UseToneSliders && !ToneAdjust.UsesQuantumRanges(tone.Method) ? tone.Contrast : 0,
+            Gamma = d.UseToneSliders && !ToneAdjust.UsesQuantumRanges(tone.Method) ? Math.Clamp(tone.Gamma, 10, 300) : 100,
+            MergeAcrossGaps = roll.LengthLines / 64,
+            LeftInsetPx = d.LeftInset, RightInsetPx = d.RightInset,
+        };
+        roll.DetectionThreshold = d.Threshold;
+        roll.DetectMinWidth = d.MinWidth;
+        roll.DetectMinLength = d.MinLength;
+
+        var rollCopy = roll.Clone();
+        _detectCts = new CancellationTokenSource();
+        long lastEmit = 0;
+        var progress = new Progress<DetectProgress>(p =>
+        {
+            // Long rolls have thousands of strips: send at most ~20 updates a second.
+            long now = Environment.TickCount64;
+            if (now - lastEmit < 50 && p.CurrentStrip < p.TotalStrips) return;
+            lastEmit = now;
+            _bridge.Emit("detect.progress", p);
+        });
+        try
+        {
+            var found = await Task.Run(() => FrameDetector.Detect(rollCopy, options,
+                i =>
+                {
+                    string p = RollPaths.PreviewFilePath(rollCopy, i);
+                    return File.Exists(p) ? TurboJpeg.DecodeFile(p, TurboJpeg.PixelFormatBgra) : null;
+                },
+                progress, _detectCts.Token));
+            FrameEditor.ReplaceDetectedRange(_project.Frames, found, options.StripFrom, options.StripTo, roll.LengthLines);
+            MarkDirty();
+            return new { frames = _project.Frames, found = found.Count };
+        }
+        catch (OperationCanceledException)
+        {
+            return new { frames = _project.Frames, found = -1 };
+        }
+        finally
+        {
+            _detectCts.Dispose();
+            _detectCts = null;
+        }
+    }
+
+    // ------------------------------------------------------------ export
+
+    private object PreviewExportPath(int index, ExportDto dto)
+    {
+        if (!_project.Roll.Loaded || index < 0 || index >= _project.Frames.Count) return new { path = "" };
+        try
+        {
+            var naming = dto.ToNaming(ExportNaming.DefaultOutputRoot(ProjectRootPath, _project.Roll));
+            return new { path = ExportNaming.PathForFrame(_project.Frames, index, naming).FullPath };
+        }
+        catch (InvalidOperationException e) { return new { path = "", error = e.Message }; }
+    }
+
+    private object StartExport(ExportDto dto)
+    {
+        var roll = _project.Roll;
+        if (!roll.Loaded) throw new BridgeException("Open a roll first.");
+        if (_exportCts is not null) throw new BridgeException("An export is already running.");
+        if (!TurboJpeg.IsAvailable) throw new BridgeException(TurboJpeg.Status);
+        if (_project.Frames.Count == 0) throw new BridgeException("There are no frames to export.");
+
+        _export = dto;
+        StoreExportToRollAndSettings();
+        _settings.Save();
+
+        var naming = dto.ToNaming(ExportNaming.DefaultOutputRoot(ProjectRootPath, roll));
+        IEnumerable<int> indices = dto.Scope == "selected" ? dto.Indices : Enumerable.Range(0, _project.Frames.Count);
+        List<ExportJob> jobs;
+        try { jobs = ExportEngine.BuildJobs(_project.Frames, indices, naming); }
+        catch (InvalidOperationException e) { throw new BridgeException("Export path error: " + e.Message); }
+        if (jobs.Count == 0) throw new BridgeException("No frames selected for export.");
+
+        foreach (var f in _project.Frames) f.IsExported = false;
+        var process = _process.ToProcessSettings(_settings.RotateCw);
+        var options = dto.ToOptions();
+        _exportEngine = new ExportEngine();
+        _exportCts = new CancellationTokenSource();
+        int done = 0;
+        var progress = new Progress<ExportJobResult>(r =>
+        {
+            done++;
+            if (r.Outcome == ExportOutcome.Exported && r.Job.FrameIdx < _project.Frames.Count)
+                _project.Frames[r.Job.FrameIdx].IsExported = true;
+            _bridge.Emit("export.progress", new
+            {
+                done, total = jobs.Count, frameIdx = r.Job.FrameIdx, outcome = r.Outcome.ToString(),
+                error = r.Error, path = r.Job.FullPath,
+            });
+        });
+
+        var frames = _project.Frames;
+        _ = Task.Run(async () =>
+        {
+            ExportSummary? summary = null;
+            string? fatal = null;
+            try { summary = await _exportEngine.RunAsync(roll, frames, jobs, process, options, progress, _exportCts.Token); }
+            catch (Exception e) { fatal = e.Message; }
+            _owner.Dispatcher.Invoke(() =>
+            {
+                _bridge.Emit("export.done", new
+                {
+                    exported = summary?.Exported ?? 0, skipped = summary?.Skipped ?? 0, failed = summary?.Failed ?? 0,
+                    cancelled = summary?.Cancelled ?? false, seconds = summary?.Elapsed.TotalSeconds ?? 0,
+                    failures = summary?.Failures.Select(f => new { frameIdx = f.Job.FrameIdx, path = f.Job.FullPath, error = f.Error }),
+                    fatal, outputRoot = naming.OutputRoot,
+                });
+                _exportCts?.Dispose();
+                _exportCts = null;
+                _exportEngine = null;
+            });
+        });
+        return new { jobs = jobs.Count, outputRoot = naming.OutputRoot };
+    }
+}

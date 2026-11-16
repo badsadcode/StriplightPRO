@@ -1,0 +1,21 @@
+<Window x:Class="Striplight.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="Striplight PRO"
+        Icon="pack://application:,,,/app.ico"
+        Width="1560" Height="960" MinWidth="1000" MinHeight="640"
+        WindowStartupLocation="CenterScreen"
+        Background="#15171A">
+    <Grid>
+        <wv2:WebView2 x:Name="Web" />
+        <!-- Shown only when the Edge WebView2 runtime is missing or fails to start. -->
+        <Border x:Name="StartupError" Visibility="Collapsed" Background="#15171A" Padding="40">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="640">
+                <TextBlock Text="Striplight PRO could not start its interface" Foreground="#E8E6E1"
+                           FontSize="22" FontWeight="SemiBold" Margin="0,0,0,12" />
+                <TextBlock x:Name="StartupErrorText" Foreground="#B9B5AD" FontSize="14" TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

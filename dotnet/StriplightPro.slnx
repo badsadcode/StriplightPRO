@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Striplight.App/Striplight.App.csproj" />
     <Project Path="src/Striplight.Core/Striplight.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
