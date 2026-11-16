@@ -9,6 +9,18 @@ A rewrite of the Lazarus Striplight (`../lazarus/`) as a .NET 10 desktop app. Th
 - **Imaging:** libjpeg-turbo (TurboJPEG API), bundled for Windows x64
 - **Platform:** Windows 10/11 x64
 
+## Get an exe to test
+
+Every push that touches `dotnet/` runs the **Windows build** workflow (`.github/workflows/windows-build.yml`). Open the run on GitHub (Actions tab → Windows build) and download from **Artifacts**:
+
+- `StriplightPRO-win-x64-single-exe`: one `StriplightPRO.exe`, about 65 MB, with .NET included. Nothing to install apart from the WebView2 runtime, which Windows 11 already has.
+- `StriplightPRO-win-x64-folder`: a small folder build that needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0).
+- `smoke-test-results`: screenshots and `smoke.json` from the automatic test run.
+
+No scans at hand? Click **Try the demo roll** on the welcome screen. Striplight generates a small synthetic roll in `%LOCALAPPDATA%\StriplightPRO\Demo`.
+
+The workflow also runs `StriplightPRO.exe --smoke <folder>`. It opens the demo roll, lets the page check itself (strip images, notes editor, frame preview), takes screenshots, exports every frame and exits with 0 on success.
+
 ## Build and run
 
 Requirements: the .NET 10 SDK (`global.json` accepts 10.0.100 or newer feature bands) and the Evergreen WebView2 Runtime.
@@ -47,14 +59,20 @@ dotnet/
     Export/                    ExportNaming, FrameBuilder, ExportEngine (parallel)
     Editing/                   FrameEditor (delete, markers, add, overrides)
     Preview/                   StripPreviewRenderer (strip view + frame preview images)
+    Demo/                      DemoRoll: synthetic roll for trying the app
   src/Striplight.App/          WPF shell
     MainWindow.xaml(.cs)       WebView2 setup: virtual hosts, image requests, messages
     Bridge/BridgeHost.cs       JSON command/reply/event bridge
     Services/AppController.cs  open/save, frame edits, detection, export commands
     Services/ImageService.cs   serves https://img.striplight/strip|frame/{n}
     Services/AppSettings.cs    per-user preferences (%APPDATA%\StriplightPRO\settings.json)
+    Services/SmokeTest.cs      --smoke self-test used by CI
     wwwroot/                   the UI: index.html, css/app.css, js/*.js, vendor/toastui/
-    web-vendor/                how the TOAST UI bundle is built (npm + esbuild); not shipped
+      js/app.js                page controller (panels, commands, keyboard)
+      js/stripView.js          canvas strip view (layout, overlays, editing)
+      js/scrubber.js           roll overview under the strip view
+      js/ui.js, js/icons.js    custom controls, Lucide icons (generated)
+    web-vendor/                how the TOAST UI bundle and icons are built (npm); not shipped
   tests/Striplight.Core.Tests/ xUnit tests
 ```
 
@@ -118,8 +136,13 @@ Behaviour notes:
 | Click, Ctrl+click, Shift+click, Ctrl+A, Esc | Selection |
 | M | Toggle folder marker |
 | Delete | Delete selected frames |
-| Enter / double-click | Frame preview (← → to step, M marker, Esc close) |
+| Enter / double-click | Frame preview (← → to step, Z zoom, M marker, Esc close) |
+| ? | Shortcut sheet |
 | Esc while dragging | Cancel the drag |
+
+## Interface
+
+The window has a dark native title bar, an app bar (roll name, Open / Save as / Save, shortcuts), a tool rail on the left (Frames, Detect, Adjust, Export, Notes), the strip view in the middle and an inspector on the right showing the panel for the selected tool. Over the strip view sit a floating toolbar (pages, zoom, strips per row, CW orientation) and, at the bottom, the legend and a roll scrubber. The scrubber marks folder markers, odd-size frames, the selection and exported frames along the whole roll, highlights the visible page, and jumps when you click or drag.
 
 ## Updating the editor bundle
 
@@ -131,10 +154,11 @@ npm install
 npm run build
 ```
 
-`build.mjs` bundles `@toast-ui/editor` together with its ProseMirror packages into one offline file and copies the CSS and licence files. The editor is created with `usageStatistics: false`, so it makes no network calls.
+This rebuilds the editor bundle and `wwwroot/js/icons.js` (from `lucide-static`, ISC licence; the icon list is in `build-icons.mjs`). `build.mjs` bundles `@toast-ui/editor` together with its ProseMirror packages into one offline file and copies the CSS and licence files. The editor is created with `usageStatistics: false`, so it makes no network calls.
 
 ## Third-party
 
 - libjpeg-turbo 3.2.0 (`native/win-x64/libturbojpeg.dll`). IJG / BSD-style licences in `native/third-party/`.
 - TOAST UI Editor 3.2.2 (MIT) and ProseMirror (MIT). See `wwwroot/vendor/toastui/THIRD-PARTY-NOTICES.md`.
+- Lucide icons 0.544.0 (ISC). See `wwwroot/js/LICENSE-lucide.txt`.
 - Microsoft.Web.WebView2 (NuGet).
