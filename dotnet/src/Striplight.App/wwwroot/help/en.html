@@ -1,0 +1,246 @@
+<section id="start">
+  <h1>Striplight PRO manual</h1>
+  <p class="lead">Striplight PRO reviews scanned microfilm rolls: it shows the strips, finds the page frames on them, lets you fix and mark them, and exports every frame as a clean JPEG into the folder structure your archive needs.</p>
+  <h2>Getting started</h2>
+  <p>Open a roll with <b>Open</b> (<kbd>Ctrl</kbd>+<kbd>O</kbd>) or drop into the demo roll from the start screen to try everything without real scans.</p>
+  <ul>
+    <li><b>.idf</b> — the QuantumScan roll file written by the scanner. Opening it reads the roll and its detected frames.</li>
+    <li><b>.qpf</b> — a QuantumScan project (frames and markers).</li>
+    <li><b>.slf</b> — a Striplight project. It holds everything QuantumScan has plus Striplight's own data: notes, suggested markers, per-frame tone, export settings.</li>
+  </ul>
+  <p>If you open an <code>.idf</code> and a saved Striplight project for that roll exists next to it, Striplight opens the project instead, so your work is never lost. Recent rolls are listed on the start screen.</p>
+  <p><b>Save</b> (<kbd>Ctrl</kbd>+<kbd>S</kbd>) writes the <code>.slf</code>. <b>Save as</b> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>) can also write a <code>.qpf</code> for QuantumScan (Striplight-only data is left out of that file). An orange <b>Unsaved</b> chip in the app bar shows unsaved changes; closing asks before anything is lost.</p>
+  <div class="tip">Striplight never changes the scanned strip files. Everything you do is stored in the project file.</div>
+</section>
+
+<section id="workflow">
+  <h2>Typical workflow</h2>
+  <ol class="steps">
+    <li><b>Open the roll</b> (<code>.idf</code>, or your saved <code>.slf</code>).</li>
+    <li><b>Tune the tone</b> in <a href="#adjust">Adjust</a> until frames look white on a black film background (gamma, brightness, contrast).</li>
+    <li><b>Detect frames</b> in <a href="#detect">Detect</a> — the whole roll or a strip range. Watch them appear live.</li>
+    <li><b>Fix the frames</b>: move, resize, draw, merge, split, fill gaps, join close fragments, expand, trim (<a href="#frames">Frames</a>, <a href="#repair">Repair tools</a>).</li>
+    <li><b>Mark folder starts</b>: let Striplight <a href="#markers">suggest markers</a>, check them, make them markers.</li>
+    <li><b>Check the markers</b> in the <a href="#preview">preview window</a>: jump from marker to marker (<kbd>F</kbd> / <kbd>G</kbd>) and compare each page with the target banner.</li>
+    <li><b>Export</b> (<a href="#export">Export</a>) into marker folders or archive-list folders.</li>
+    <li><b>Save</b> the project.</li>
+  </ol>
+</section>
+
+<section id="screen">
+  <h2>The screen</h2>
+  <ul>
+    <li><b>App bar</b> (top): roll name and size, unsaved chip, Open / Save as / Save, theme, keyboard shortcuts, Help, language.</li>
+    <li><b>Tool rail</b> (left): Frames, Detect, Adjust, Export, Notes. Each opens its panel on the right.</li>
+    <li><b>Strip view</b> (middle): the strips of the current page, turned upright, with every frame drawn on them.</li>
+    <li><b>View toolbar</b> (over the strips): pages, zoom, strips per row, <b>Auto</b>, <b>#</b> strip numbers, <b>Multi</b> edit, <b>CW</b> orientation.</li>
+    <li><b>Legend and roll overview</b> (bottom): the colour key, and a bar for the whole roll showing markers, odd sizes, selection and exported frames. Click or drag it to jump.</li>
+    <li><b>Status bar</b>: messages on the left, the position under the mouse (strip, line, x, frame size) on the right.</li>
+  </ul>
+  <h3>Frame colours</h3>
+  <table>
+    <tr><th>Colour</th><th>Meaning</th></tr>
+    <tr><td><span class="sw" style="border-color:#22c55e"></span>Green</td><td>Normal frame</td></tr>
+    <tr><td><span class="sw" style="border-color:#ef4444"></span>Red</td><td>Odd size (much bigger or smaller than its neighbours)</td></tr>
+    <tr><td><span class="sw" style="border-color:#eab308"></span>Yellow</td><td>Folder marker — a new folder starts here (labelled F1, F2…)</td></tr>
+    <tr><td><span class="sw" style="border-color:#c026d3"></span>Purple</td><td>Suggested folder start, not confirmed yet</td></tr>
+    <tr><td><span class="sw" style="border-color:#22d3ee"></span>Cyan</td><td>Selected</td></tr>
+    <tr><td><span class="sw" style="border-color:#3b82f6"></span>Blue</td><td>Exported in this session</td></tr>
+    <tr><td><span class="sw" style="border-color:#f97316"></span>Orange</td><td>Own settings (own orientation or own tone)</td></tr>
+  </table>
+  <p><b>Frame fill opacity</b> (Frames panel) fills frames with their colour; 0 shows outlines only.</p>
+</section>
+
+<section id="view">
+  <h2>Moving around</h2>
+  <ul>
+    <li><b>Pages</b>: <kbd>X</kbd> / <kbd>C</kbd>, <kbd>Page Up</kbd> / <kbd>Page Down</kbd>, <kbd>Home</kbd> / <kbd>End</kbd>, the mouse wheel, or type a page number.</li>
+    <li><b>Zoom</b>: <kbd>Ctrl</kbd>+wheel, <kbd>+</kbd> / <kbd>−</kbd>, or the slider.</li>
+    <li><b>Strips per row</b>: set the number, or switch on <b>Auto</b> to fit as many as the window allows.</li>
+    <li><b>#</b> shows strip numbers. <b>CW</b> switches the source orientation (clockwise + mirror instead of counter-clockwise) for scanners that store strips the other way round.</li>
+    <li><b>Jump</b>: <kbd>F</kbd> / <kbd>G</kbd> next / previous folder marker; <b>Next odd size</b> finds the next red frame.</li>
+  </ul>
+  <p>Strip images come from the roll's preview files, so pages appear quickly even on network shares. Previews are re-rendered when you change the tone.</p>
+</section>
+
+<section id="frames">
+  <h2>Working with frames</h2>
+  <h3>Selecting</h3>
+  <ul>
+    <li>Click a frame to select it, <kbd>Ctrl</kbd>+click to add or remove, <kbd>Shift</kbd>+click for a range.</li>
+    <li><kbd>Ctrl</kbd>+<kbd>A</kbd> selects all, <kbd>Ctrl</kbd>+<kbd>D</kbd> or <kbd>Esc</kbd> selects none, <b>Select page</b> selects the visible page.</li>
+    <li>A single selected frame shows its details (position, size, strips, own settings) at the bottom of the Frames panel.</li>
+  </ul>
+  <h3>Moving, resizing and drawing</h3>
+  <ul>
+    <li><b>Move</b>: drag a selected frame. Past the end of a row it continues in the next row, like the film itself.</li>
+    <li><b>Resize</b>: drag an edge or a corner handle. Resizing also continues into the next or previous row.</li>
+    <li><b>Draw</b>: drag on empty film to draw a new frame.</li>
+    <li><kbd>Esc</kbd> during a drag puts the frame back.</li>
+  </ul>
+  <h3>Multi-edit</h3>
+  <p>Switch on <b>Multi</b> in the view toolbar, select several frames and drag an edge or corner of one of them: the same edge of every selected frame moves by the same amount. Each frame stays inside the roll and keeps a minimum size.</p>
+  <h3>Edit tools</h3>
+  <table>
+    <tr><th>Tool</th><th>Key</th><th>What it does</th></tr>
+    <tr><td>Folder marker</td><td><kbd>A</kbd> <kbd>M</kbd></td><td>Toggles the yellow folder-start marker on the selected frames.</td></tr>
+    <tr><td>Merge pairs</td><td><kbd>E</kbd></td><td>Merges the selected frames in pairs (1st+2nd, 3rd+4th…).</td></tr>
+    <tr><td>Combine</td><td><kbd>J</kbd></td><td>Combines selected frames that overlap into one.</td></tr>
+    <tr><td>Split into parts</td><td><kbd>S</kbd></td><td>Splits each selected frame into N equal parts along the film. <b>Show split lines</b> previews the cuts.</td></tr>
+    <tr><td>Suggested</td><td><kbd>Z</kbd></td><td>Toggles the purple suggestion on one frame.</td></tr>
+    <tr><td>Delete</td><td><kbd>D</kbd> / <kbd>Delete</kbd></td><td>Deletes the selected frames (<kbd>Delete</kbd> asks first above 20 frames).</td></tr>
+    <tr><td>Undo</td><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Undoes the last frame change (25 steps).</td></tr>
+  </table>
+  <h3>Right-click menu</h3>
+  <p>Right-click a frame or the film for: preview, folder marker, select / delete the folder section (from a marker to the next one), clear exported marks, set the detection start or end at that strip, clear per-frame settings and delete.</p>
+</section>
+
+<section id="repair">
+  <h2>Repair tools</h2>
+  <ul>
+    <li><b>Fill gaps</b>: neighbouring selected frames are stretched to meet in the middle of the gap between them.</li>
+    <li><b>Join close</b>: selected fragments closer than the <b>join gap</b> are joined into one frame. <b>Show reach</b> draws an orange band after each selected frame showing how far the join reaches.</li>
+    <li><b>Expand selected</b>: grows the selected frames by the given pixels on each side as seen on screen (left, right, top, bottom). Negative values shrink.</li>
+    <li><b>Trim</b>: switch on <b>Show trim lines</b>, set or drag the yellow lines at the top and bottom of the strips, then <b>Apply trim to all frames</b>: every frame reaching into the yellow bands is clipped to them.</li>
+    <li><b>Per-frame orientation</b>: give the selected frames their own rotation, mirror or negative (they get the orange "own settings" colour). <b>Clear</b> returns them to the global orientation.</li>
+  </ul>
+</section>
+
+<section id="detect">
+  <h2>Detecting frames</h2>
+  <p>Detection finds bright frames on dark film using the preview strips. Frames that start inside the detected range are replaced; frames outside it stay.</p>
+  <h3>Before you detect</h3>
+  <p>With <b>Use the Adjust tone</b> on, detection sees exactly what the strips show. Go to <a href="#adjust">Adjust</a> and push gamma, brightness and contrast until the pages are close to white on a black background — then detect. This works much better than detecting the raw scan.</p>
+  <h3>Sensitivity</h3>
+  <ul>
+    <li><b>Threshold</b> (1–254): how bright a pixel must be (after the tone curve) to count as page.</li>
+    <li><b>Min width / Min length</b>: smaller bright areas are ignored (full-resolution pixels).</li>
+    <li><b>Show frames live</b>: frames appear while detection runs and the view follows the strip being read.</li>
+    <li><b>Auto threshold per strip</b>: picks the threshold for each strip from its brightness histogram (the split between page and background). Useful when the lighting changes along the roll; strips of empty film fall back to the manual threshold.</li>
+    <li><b>Dark frames on light film</b>: inverts detection.</li>
+  </ul>
+  <h3>Advanced controls</h3>
+  <table>
+    <tr><th>Setting</th><th>What it does</th></tr>
+    <tr><td>Min run</td><td>A bright pixel only counts inside a run of at least this many bright pixels across the film. Removes dust and grey background that make boxes too wide. Try 16–30 px.</td></tr>
+    <tr><td>Touch width</td><td>Dark gaps up to this size across the film still join two bright parts of a line.</td></tr>
+    <tr><td>Touch length</td><td>Dark lines up to this length along the film do not cut a frame in two (also across strips).</td></tr>
+    <tr><td>Max length</td><td>Longer frames are split into equal parts (0 = off).</td></tr>
+    <tr><td>Overscan width / length</td><td>Grows every detected frame by a margin (negative values shrink).</td></tr>
+  </table>
+  <p><b>Defaults</b> resets them. Detection settings are remembered on this computer.</p>
+  <h3>Range and ignore area</h3>
+  <ul>
+    <li><b>Whole roll</b> or <b>Strip range</b>. Typing a From / To strip, or right-clicking a strip and choosing <i>Set detection start / end here</i>, switches to the range; green and red markers show it on the strips. The Detect button says what it will do.</li>
+    <li><b>Ignore top / bottom</b> with <b>Use and show the ignore area</b>: blue bands at the strip edges are left out of detection. Drag the blue lines or type the values.</li>
+  </ul>
+</section>
+
+<section id="markers">
+  <h2>Folder markers and suggestions</h2>
+  <p>A yellow <b>folder marker</b> starts a new export folder. Striplight can suggest folder starts from unusually large gaps between frames (the empty film between documents).</p>
+  <ul>
+    <li><b>Suggest markers</b> marks the likely starts in purple. <b>Strictness</b> (10–200): higher means fewer, surer suggestions; moving the slider updates the suggestions. On real rolls 80–120 works well.</li>
+    <li><b>Suggest the frame before the gap</b> marks the last frame before a gap instead of the first after it.</li>
+    <li><b>Toward start / Toward end</b> suggest only before or after the one selected frame.</li>
+    <li><b>Select suggested</b>, then check them; <kbd>Z</kbd> toggles a single suggestion. <b>Make markers</b> turns all suggestions into folder markers.</li>
+    <li><b>Clear suggested</b>, <b>Clear selected</b>, <b>Every Nth</b> (clear every Nth suggestion before / after the selected frame), and <b>Clear markers</b> before / after the selected frame tidy up.</li>
+  </ul>
+  <div class="tip">To check markers, open the preview window on a marker and press <kbd>F</kbd> / <kbd>G</kbd> to jump between markers. The big target banner shows the folder number and the target folder and file name, so you can compare them with what is written on the page.</div>
+</section>
+
+<section id="adjust">
+  <h2>Adjust: tone and orientation</h2>
+  <h3>Tone</h3>
+  <ul>
+    <li><b>Method</b>: <i>Striplight current</i> (default), <i>Quantum-like</i> (QuantumScan slider ranges: contrast 64 and gamma 0 are neutral), curve methods, and adaptive methods (<i>Auto levels</i>, <i>Local contrast (CLAHE)</i>, <i>Exposure balance</i>, <i>Background flatten</i>) with a <b>Strength</b> slider.</li>
+    <li><b>Contrast, Brightness, Gamma</b> change the strips live and apply to the preview and the export.</li>
+    <li><b>Rescue curves</b>: shadow lift, highlight recovery, S-curve, document rescue, soft contrast — for faded or dense film.</li>
+    <li><b>Show on strips</b> off shows the untouched scan in the strip view.</li>
+  </ul>
+  <p>Adaptive methods analyse each frame on export; the strips show a per-strip approximation, so use the preview (<kbd>Enter</kbd>) for the exact result.</p>
+  <h3>Own tone for selected frames</h3>
+  <p>Under <b>Apply tone to</b>, choose <b>Selected frames</b>: the sliders now show the selected frame's tone, and every change gives the selected frames their <b>own complete tone</b> (method, curves, sliders, strength). That tone is locked: changing the global tone later never touches those frames. They are shown in their own tone on the strips, in the preview and in the export.</p>
+  <ul>
+    <li><b>Select own-tone</b> selects every frame with its own tone.</li>
+    <li><b>Use global tone</b> puts the selected frames back on the global tone.</li>
+  </ul>
+  <h3>Sharpen and orientation</h3>
+  <p><b>Sharpen</b> (mode and amount) applies to the preview and export of all frames. <b>Orientation</b> (rotation, mirror, negative) applies to all frames except those with their own orientation.</p>
+</section>
+
+<section id="preview">
+  <h2>Preview window</h2>
+  <p>Press <kbd>Enter</kbd> or double-click a frame to open the preview: the frame exactly as it will be exported. It is a separate window — keep it on a second screen, or pin it <b>On top</b> (<kbd>T</kbd>). Clicking a frame in the main window shows it here.</p>
+  <ul>
+    <li><kbd>X</kbd> / <kbd>C</kbd> (or arrows) previous / next frame; <b>Step</b> sets how many frames they move. <kbd>G</kbd> / <kbd>F</kbd> jump between folder markers.</li>
+    <li>Wheel zooms around the cursor, drag pans, double-click toggles fit / 1:1, <kbd>0</kbd> fit, <kbd>1</kbd> 1:1, <kbd>Q</kbd> full quality.</li>
+    <li><kbd>R</kbd> / <kbd>Shift</kbd>+<kbd>R</kbd> rotate, <kbd>M</kbd> mirror, <kbd>N</kbd> negative — for this frame only. <kbd>A</kbd> toggles its folder marker.</li>
+    <li>The <b>target banner</b> shows the folder number, the target folder and the file name of this frame. <kbd>I</kbd> hides or shows it. <kbd>Esc</kbd> closes the window.</li>
+  </ul>
+</section>
+
+<section id="export">
+  <h2>Export</h2>
+  <p>Export writes every frame (or only the selected frames) as a JPEG, exactly as the preview shows it. Under the naming settings, a path preview shows where the selected frame will go — check it before a long export.</p>
+  <h3>Quantum folders (one folder per marker)</h3>
+  <p>Each folder marker starts a new numbered folder in the output folder (with <b>Counter digits</b> 5: <code>00001</code>, <code>00002</code>…); frames before the first marker go to folder 1. Files are named <b>File prefix</b> + counter, e.g. <code>page_00001.jpg</code>, and the counter starts again at 1 in every folder.</p>
+  <p class="note">With <b>Folder per marker</b> off all files go into the output folder itself. Because the counter restarts at each marker (as in the Lazarus edition), use this only for rolls without markers.</p>
+  <h3>Archive list (one row per marker)</h3>
+  <p>Paste one row per folder marker. The parts of a row, separated by <code>;</code>, become nested folders and the start of the file name:</p>
+  <pre>;73;524;0;0;80
+;73;524;0;0;81</pre>
+  <p>Leading <code>;</code> are ignored. The first marker's frames go to <code>73\524\0\0\80\73_524_0_0_80_00001.jpg</code>, <code>…_00002.jpg</code> and so on; the second marker's to <code>73\524\0\0\81\</code>. The path preview shows how many folders and list rows there are — if rows are missing it turns red before you export.</p>
+  <h3>Output options</h3>
+  <ul>
+    <li><b>Quality</b> (JPEG 1–100), <b>Workers</b> (frames built in parallel), <b>Strip cache</b> (full strips kept in memory).</li>
+    <li><b>Skip existing files</b> — continue an interrupted export.</li>
+    <li><b>Use previews when strips are missing</b> — lower resolution, but no gaps.</li>
+    <li><b>Stage through local temp</b> — write each file locally first, then copy it to the network share (faster and safer on slow shares).</li>
+    <li><b>Prepare folders</b> creates all output folders now, without exporting.</li>
+  </ul>
+  <p>During export: <b>Pause</b> / <b>Resume</b> and <b>Stop</b>. Exported frames turn blue. Failed frames are listed under the progress bar; click one to show it.</p>
+</section>
+
+<section id="notes">
+  <h2>Notes</h2>
+  <p>The Notes panel is a Markdown editor for the roll: damage, missing frames, box labels, questions for the archive. Notes are saved in the <code>.slf</code> project.</p>
+</section>
+
+<section id="shortcuts">
+  <h2>Keyboard shortcuts</h2>
+  <p>Every command can have your own keys: press <kbd>?</kbd> (or the keyboard button), click <b>+</b> next to a command and press a key; <b>×</b> removes a key. A key already used elsewhere moves to the new command. <b>Reset to defaults</b> brings back the defaults below.</p>
+  <table>
+    <tr><th>Command</th><th>Default keys</th></tr>
+    <tr><td>Open / Save / Save as</td><td><kbd>Ctrl</kbd>+<kbd>O</kbd> · <kbd>Ctrl</kbd>+<kbd>S</kbd> · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></td></tr>
+    <tr><td>Next / previous page</td><td><kbd>C</kbd> <kbd>Page Down</kbd> · <kbd>X</kbd> <kbd>Page Up</kbd></td></tr>
+    <tr><td>First / last page</td><td><kbd>Home</kbd> · <kbd>End</kbd></td></tr>
+    <tr><td>Next / previous folder marker</td><td><kbd>F</kbd> · <kbd>G</kbd></td></tr>
+    <tr><td>Zoom in / out</td><td><kbd>+</kbd> <kbd>=</kbd> · <kbd>−</kbd></td></tr>
+    <tr><td>Open preview window</td><td><kbd>Enter</kbd></td></tr>
+    <tr><td>Keyboard shortcuts / Help</td><td><kbd>?</kbd> · <kbd>F1</kbd></td></tr>
+    <tr><td>Select all / none</td><td><kbd>Ctrl</kbd>+<kbd>A</kbd> · <kbd>Ctrl</kbd>+<kbd>D</kbd> <kbd>Esc</kbd></td></tr>
+    <tr><td>Toggle folder marker</td><td><kbd>A</kbd> <kbd>M</kbd></td></tr>
+    <tr><td>Delete selected</td><td><kbd>D</kbd> · <kbd>Delete</kbd></td></tr>
+    <tr><td>Merge pairs / Combine / Split</td><td><kbd>E</kbd> · <kbd>J</kbd> · <kbd>S</kbd></td></tr>
+    <tr><td>Toggle suggested marker</td><td><kbd>Z</kbd></td></tr>
+    <tr><td>Undo</td><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td></tr>
+  </table>
+  <p>Commands without a default key (fill gaps, join close, expand, apply trim, select page / folder section, detect, suggest, start export, Multi, Auto, theme…) can be given one in the editor. Preview window keys are listed in <a href="#preview">Preview window</a> and can be changed in the same editor.</p>
+</section>
+
+<section id="language">
+  <h2>Language and translations</h2>
+  <p>The <b>EN / PL</b> button in the app bar switches between English and Polish. Both windows reload in the new language; the open roll stays open.</p>
+  <p>To change a translation, choose <b>Edit translations</b> in that menu. Striplight copies <code>pl.json</code> to <code>%APPDATA%\StriplightPRO\lang\</code> and opens the folder. Each line maps the English text to the translation; edit the right-hand side and switch the language again to see it. Your file overrides the built-in one and survives updates. Lines you delete fall back to the built-in translation.</p>
+</section>
+
+<section id="files">
+  <h2>Files, settings and tips</h2>
+  <ul>
+    <li>Settings (window, theme, language, shortcuts, last folders): <code>%APPDATA%\StriplightPRO\settings.json</code>.</li>
+    <li>The strip view and detection use the roll's preview files; export uses the full strips. If previews are missing, the status line after detection says how many and where they were expected.</li>
+    <li>On network shares, keep <b>Workers</b> moderate (4–8) and switch on <b>Stage through local temp</b>.</li>
+    <li>Striplight needs the Microsoft Edge WebView2 Runtime (already part of Windows 10/11).</li>
+  </ul>
+</section>

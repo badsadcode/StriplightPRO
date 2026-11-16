@@ -1170,6 +1170,12 @@ const commands = {
   },
   exportStop: () => call('export.cancel'),
   shortcuts: () => { renderKeysEditor(); $('#shortcuts-modal').hidden = false; },
+  // F1 opens the manual at the topic of the panel in front (or the start when no roll is open).
+  help: () => {
+    const tab = $('.rail [aria-selected=true]')?.dataset.tab;
+    const topic = !hasRoll() ? 'start' : { frames: 'frames', detect: 'detect', process: 'adjust', export: 'export', notes: 'notes' }[tab] || 'start';
+    call('help.open', { topic }).catch((e) => toast(e.message, 'error'));
+  },
   langMenu: () => {
     const m = $('#lang-menu');
     if (!m.hidden) { m.hidden = true; return; }
@@ -1281,7 +1287,7 @@ document.addEventListener('keydown', (e) => {
   if (typing(e) && !(e.ctrlKey || e.metaKey)) return;
   const fn = commands[id];
   if (!fn) return;
-  const noRoll = ['open', 'shortcuts', 'theme'];
+  const noRoll = ['open', 'shortcuts', 'theme', 'help'];
   if (!hasRoll() && !noRoll.includes(id)) return;
   e.preventDefault();
   Promise.resolve(fn()).catch(() => {});

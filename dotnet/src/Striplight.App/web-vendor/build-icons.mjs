@@ -7,6 +7,7 @@ const names = [
   'notebook-pen', 'keyboard', 'trash-2', 'flag', 'eye', 'x', 'play', 'pause', 'square', 'folder',
   'external-link', 'sparkles', 'rotate-ccw', 'film', 'info', 'flip-horizontal-2', 'contrast', 'check-check',
   'scan', 'grid-2x2', 'history', 'crosshair', 'square-dashed-mouse-pointer',
+  'circle-help', 'book-open', 'search', 'languages',
   'sun', 'moon', 'pin', 'pin-off', 'undo-2', 'merge', 'combine', 'split', 'expand', 'skip-forward', 'skip-back',
 ];
 const icons = {};

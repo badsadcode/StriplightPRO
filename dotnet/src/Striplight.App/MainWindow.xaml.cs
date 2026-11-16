@@ -15,6 +15,7 @@ public interface IWindowHost
     void ClosePreview();
     void SetPreviewTopmost(bool value);
     void ApplyTheme(bool dark);
+    void OpenHelp(string topic);
     PreviewWindow? Preview { get; }
 }
 
@@ -32,6 +33,7 @@ public partial class MainWindow : Window, IWindowHost
     private readonly ImageService _images;
     private readonly SmokeTest? _smoke;
     private PreviewWindow? _preview;
+    private HelpWindow? _help;
     private bool _closeConfirmed;
 
     public MainWindow()
@@ -103,6 +105,14 @@ public partial class MainWindow : Window, IWindowHost
 
     public void ClosePreview() => _preview?.Close();
 
+    public void OpenHelp(string topic)
+    {
+        if (_help is not null) { _help.ShowTopic(topic); return; }
+        _help = new HelpWindow(_bridge, _images, _controller.Settings, topic);
+        _help.Closed += (_, _) => _help = null;
+        _help.Show();
+    }
+
     public void SetPreviewTopmost(bool value)
     {
         if (_preview is not null) _preview.Topmost = value;
@@ -113,17 +123,19 @@ public partial class MainWindow : Window, IWindowHost
         DarkTitleBar.Apply(new WindowInteropHelper(this).Handle, dark);
         if (Web.CoreWebView2 is not null) Web.DefaultBackgroundColor = WebBackground(dark);
         _preview?.ApplyTheme(dark);
+        _help?.ApplyTheme(dark);
     }
 
     private void OnClosing(object? sender, CancelEventArgs e)
     {
-        if (_closeConfirmed || _smoke is not null) { _preview?.Close(); return; }
+        if (_closeConfirmed || _smoke is not null) { _preview?.Close(); _help?.Close(); return; }
         if (!_controller.ConfirmDiscardOrSave("closing Striplight PRO"))
         {
             e.Cancel = true;
             return;
         }
         _preview?.Close();
+        _help?.Close();
         _controller.Shutdown();
         _closeConfirmed = true;
     }

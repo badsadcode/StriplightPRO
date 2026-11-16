@@ -155,6 +155,10 @@ Defaults (same keys as the Lazarus edition):
 
 Preview window: X / C (or ← / →) previous / next frame by the step, G / F folder markers, R / Shift+R rotate ±90°, M mirror, N negative, A marker, wheel zoom around the cursor, drag to pan, double-click or 0 / 1 for fit / 1:1, Q full quality, T always on top, I show / hide the target banner (folder number, target folder, file name), Esc close.
 
+## Help
+
+**Help** (the ? circle in the app bar, or **F1**) opens the manual in its own window, at the topic of the panel in front. It is written in English and Polish (`wwwroot/help/en.html`, `help/pl.html`; one `<section id>` per topic with an `<h2>`), has a contents list and search, and follows the chosen language and theme. Keep both files in step when features change.
+
 ## Languages
 
 English (default) and Polish. Switch with the **EN / PL** button in the app bar; both windows reload in the new language and the open roll stays as it is.

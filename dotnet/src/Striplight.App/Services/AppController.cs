@@ -117,7 +117,8 @@ public sealed class AppController
             return OpenProject(idf);
         });
         // ---- language
-        _bridge.On("i18n.get", _ => new { lang = Loc.Language, dict = Loc.Dictionary });
+        _bridge.On("i18n.get", _ => new { lang = Loc.Language, dict = Loc.Dictionary, theme = _settings.Theme });
+        _bridge.On("help.open", args => { _host.OpenHelp(BridgeHost.Arg(args, "topic", "")); return null; });
         _bridge.On("app.setLanguage", args =>
         {
             string lang = BridgeHost.Arg(args, "lang", "en");

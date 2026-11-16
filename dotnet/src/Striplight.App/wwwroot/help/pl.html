@@ -1,0 +1,246 @@
+<section id="start">
+  <h1>Podręcznik Striplight PRO</h1>
+  <p class="lead">Striplight PRO służy do przeglądania zeskanowanych rolek mikrofilmu: pokazuje paski, znajduje na nich klatki stron, pozwala je poprawiać i oznaczać, a potem eksportuje każdą klatkę jako czysty plik JPEG do struktury folderów, jakiej potrzebuje archiwum.</p>
+  <h2>Pierwsze kroki</h2>
+  <p>Otwórz rolkę przyciskiem <b>Otwórz</b> (<kbd>Ctrl</kbd>+<kbd>O</kbd>) albo uruchom rolkę demo z ekranu startowego, aby wypróbować wszystko bez prawdziwych skanów.</p>
+  <ul>
+    <li><b>.idf</b> — plik rolki QuantumScan zapisany przez skaner. Otwarcie go wczytuje rolkę i wykryte klatki.</li>
+    <li><b>.qpf</b> — projekt QuantumScan (klatki i znaczniki).</li>
+    <li><b>.slf</b> — projekt Striplight. Zawiera wszystko to, co QuantumScan, oraz dane Striplight: notatki, sugerowane znaczniki, własną tonację klatek, ustawienia eksportu.</li>
+  </ul>
+  <p>Jeśli otwierasz plik <code>.idf</code>, a obok leży zapisany projekt Striplight dla tej rolki, Striplight otworzy projekt — Twoja praca nigdy nie przepada. Ostatnio otwierane rolki są na ekranie startowym.</p>
+  <p><b>Zapisz</b> (<kbd>Ctrl</kbd>+<kbd>S</kbd>) zapisuje plik <code>.slf</code>. <b>Zapisz jako</b> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>) może też zapisać <code>.qpf</code> dla QuantumScan (bez danych dostępnych tylko w Striplight). Pomarańczowy znaczek <b>Niezapisane</b> na górnym pasku oznacza niezapisane zmiany; przy zamykaniu program zapyta, zanim cokolwiek przepadnie.</p>
+  <div class="tip">Striplight nigdy nie zmienia zeskanowanych plików pasków. Wszystko, co robisz, trafia do pliku projektu.</div>
+</section>
+
+<section id="workflow">
+  <h2>Typowa praca</h2>
+  <ol class="steps">
+    <li><b>Otwórz rolkę</b> (<code>.idf</code> albo zapisany <code>.slf</code>).</li>
+    <li><b>Ustaw tonację</b> w <a href="#adjust">Korekcie</a>, aż klatki będą białe na czarnym tle filmu (gamma, jasność, kontrast).</li>
+    <li><b>Wykryj klatki</b> w <a href="#detect">Detekcji</a> — całą rolkę albo zakres pasków. Klatki pojawiają się na bieżąco.</li>
+    <li><b>Popraw klatki</b>: przesuwaj, zmieniaj rozmiar, rysuj, scalaj, dziel, wypełniaj przerwy, łącz bliskie fragmenty, powiększaj, przycinaj (<a href="#frames">Klatki</a>, <a href="#repair">Narzędzia naprawy</a>).</li>
+    <li><b>Oznacz początki folderów</b>: niech Striplight <a href="#markers">zasugeruje znaczniki</a>, sprawdź je i zamień na znaczniki.</li>
+    <li><b>Sprawdź znaczniki</b> w <a href="#preview">oknie podglądu</a>: przeskakuj między znacznikami (<kbd>F</kbd> / <kbd>G</kbd>) i porównuj każdą stronę z paskiem celu.</li>
+    <li><b>Eksportuj</b> (<a href="#export">Eksport</a>) do folderów znaczników albo folderów z listy archiwalnej.</li>
+    <li><b>Zapisz</b> projekt.</li>
+  </ol>
+</section>
+
+<section id="screen">
+  <h2>Ekran</h2>
+  <ul>
+    <li><b>Górny pasek</b>: nazwa i rozmiar rolki, znaczek niezapisanych zmian, Otwórz / Zapisz jako / Zapisz, motyw, skróty klawiszowe, Pomoc, język.</li>
+    <li><b>Pasek narzędzi</b> (z lewej): Klatki, Detekcja, Korekta, Eksport, Notatki. Każde otwiera swój panel po prawej.</li>
+    <li><b>Widok pasków</b> (środek): paski bieżącej strony, obrócone pionowo, z narysowanymi klatkami.</li>
+    <li><b>Pasek widoku</b> (nad paskami): strony, powiększenie, paski w rzędzie, <b>Auto</b>, <b>#</b> numery pasków, <b>Grupa</b> (edycja grupowa), orientacja <b>CW</b>.</li>
+    <li><b>Legenda i podgląd rolki</b> (na dole): opis kolorów oraz pasek całej rolki ze znacznikami, nietypowymi rozmiarami, zaznaczeniem i wyeksportowanymi klatkami. Kliknij lub przeciągnij, aby przejść.</li>
+    <li><b>Pasek stanu</b>: komunikaty z lewej, położenie kursora (pasek, linia, x, rozmiar klatki) z prawej.</li>
+  </ul>
+  <h3>Kolory klatek</h3>
+  <table>
+    <tr><th>Kolor</th><th>Znaczenie</th></tr>
+    <tr><td><span class="sw" style="border-color:#22c55e"></span>Zielony</td><td>Zwykła klatka</td></tr>
+    <tr><td><span class="sw" style="border-color:#ef4444"></span>Czerwony</td><td>Nietypowy rozmiar (dużo większa lub mniejsza od sąsiednich)</td></tr>
+    <tr><td><span class="sw" style="border-color:#eab308"></span>Żółty</td><td>Znacznik folderu — tu zaczyna się nowy folder (etykiety F1, F2…)</td></tr>
+    <tr><td><span class="sw" style="border-color:#c026d3"></span>Fioletowy</td><td>Sugerowany początek folderu, jeszcze niepotwierdzony</td></tr>
+    <tr><td><span class="sw" style="border-color:#22d3ee"></span>Turkusowy</td><td>Zaznaczona</td></tr>
+    <tr><td><span class="sw" style="border-color:#3b82f6"></span>Niebieski</td><td>Wyeksportowana w tej sesji</td></tr>
+    <tr><td><span class="sw" style="border-color:#f97316"></span>Pomarańczowy</td><td>Własne ustawienia (własna orientacja lub tonacja)</td></tr>
+  </table>
+  <p><b>Krycie wypełnienia klatek</b> (panel Klatki) wypełnia klatki ich kolorem; 0 pokazuje tylko obrys.</p>
+</section>
+
+<section id="view">
+  <h2>Poruszanie się</h2>
+  <ul>
+    <li><b>Strony</b>: <kbd>X</kbd> / <kbd>C</kbd>, <kbd>Page Up</kbd> / <kbd>Page Down</kbd>, <kbd>Home</kbd> / <kbd>End</kbd>, kółko myszy albo wpisany numer strony.</li>
+    <li><b>Powiększenie</b>: <kbd>Ctrl</kbd>+kółko, <kbd>+</kbd> / <kbd>−</kbd> albo suwak.</li>
+    <li><b>Paski w rzędzie</b>: wpisz liczbę albo włącz <b>Auto</b>, aby zmieścić tyle, ile pozwala okno.</li>
+    <li><b>#</b> pokazuje numery pasków. <b>CW</b> zmienia orientację źródła (zgodnie z ruchem wskazówek zegara + odbicie zamiast przeciwnie) dla skanerów, które zapisują paski odwrotnie.</li>
+    <li><b>Skoki</b>: <kbd>F</kbd> / <kbd>G</kbd> następny / poprzedni znacznik folderu; <b>Następna nietypowa</b> znajduje kolejną czerwoną klatkę.</li>
+  </ul>
+  <p>Obrazy pasków pochodzą z plików podglądu rolki, więc strony pojawiają się szybko nawet na udziałach sieciowych. Po zmianie tonacji podglądy są generowane od nowa.</p>
+</section>
+
+<section id="frames">
+  <h2>Praca z klatkami</h2>
+  <h3>Zaznaczanie</h3>
+  <ul>
+    <li>Kliknij klatkę, aby ją zaznaczyć, <kbd>Ctrl</kbd>+klik dodaje lub usuwa, <kbd>Shift</kbd>+klik zaznacza zakres.</li>
+    <li><kbd>Ctrl</kbd>+<kbd>A</kbd> zaznacza wszystko, <kbd>Ctrl</kbd>+<kbd>D</kbd> lub <kbd>Esc</kbd> odznacza, <b>Zaznacz stronę</b> zaznacza widoczną stronę.</li>
+    <li>Pojedyncza zaznaczona klatka pokazuje swoje dane (położenie, rozmiar, paski, własne ustawienia) na dole panelu Klatki.</li>
+  </ul>
+  <h3>Przesuwanie, zmiana rozmiaru i rysowanie</h3>
+  <ul>
+    <li><b>Przesuwanie</b>: przeciągnij zaznaczoną klatkę. Za końcem rzędu klatka przechodzi do następnego rzędu, tak jak sam film.</li>
+    <li><b>Zmiana rozmiaru</b>: przeciągnij krawędź lub uchwyt w narożniku. Zmiana rozmiaru też przechodzi do następnego lub poprzedniego rzędu.</li>
+    <li><b>Rysowanie</b>: przeciągnij po pustym filmie, aby narysować nową klatkę.</li>
+    <li><kbd>Esc</kbd> w trakcie przeciągania przywraca klatkę.</li>
+  </ul>
+  <h3>Edycja grupowa</h3>
+  <p>Włącz <b>Grupa</b> na pasku widoku, zaznacz kilka klatek i przeciągnij krawędź lub narożnik jednej z nich: ta sama krawędź każdej zaznaczonej klatki przesunie się o tyle samo. Każda klatka zostaje w granicach rolki i zachowuje minimalny rozmiar.</p>
+  <h3>Narzędzia edycji</h3>
+  <table>
+    <tr><th>Narzędzie</th><th>Klawisz</th><th>Działanie</th></tr>
+    <tr><td>Znacznik folderu</td><td><kbd>A</kbd> <kbd>M</kbd></td><td>Przełącza żółty znacznik początku folderu na zaznaczonych klatkach.</td></tr>
+    <tr><td>Scal parami</td><td><kbd>E</kbd></td><td>Scala zaznaczone klatki parami (1.+2., 3.+4.…).</td></tr>
+    <tr><td>Połącz</td><td><kbd>J</kbd></td><td>Łączy nachodzące na siebie zaznaczone klatki w jedną.</td></tr>
+    <tr><td>Podziel na części</td><td><kbd>S</kbd></td><td>Dzieli każdą zaznaczoną klatkę na N równych części wzdłuż filmu. <b>Pokaż linie podziału</b> pokazuje cięcia.</td></tr>
+    <tr><td>Sugerowane</td><td><kbd>Z</kbd></td><td>Przełącza fioletową sugestię na jednej klatce.</td></tr>
+    <tr><td>Usuń</td><td><kbd>D</kbd> / <kbd>Delete</kbd></td><td>Usuwa zaznaczone klatki (<kbd>Delete</kbd> pyta, gdy jest ich ponad 20).</td></tr>
+    <tr><td>Cofnij</td><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Cofa ostatnią zmianę klatek (25 kroków).</td></tr>
+  </table>
+  <h3>Menu prawego przycisku</h3>
+  <p>Prawy przycisk na klatce lub filmie: podgląd, znacznik folderu, zaznaczenie / usunięcie sekcji folderu (od znacznika do następnego), czyszczenie oznaczeń eksportu, ustawienie początku lub końca wykrywania na tym pasku, czyszczenie ustawień klatek i usuwanie.</p>
+</section>
+
+<section id="repair">
+  <h2>Narzędzia naprawy</h2>
+  <ul>
+    <li><b>Wypełnij przerwy</b>: sąsiednie zaznaczone klatki są rozciągane tak, aby spotkały się w połowie przerwy między nimi.</li>
+    <li><b>Połącz bliskie</b>: zaznaczone fragmenty bliższe niż <b>odstęp łączenia</b> są łączone w jedną klatkę. <b>Pokaż zasięg</b> rysuje pomarańczowy pas za każdą zaznaczoną klatką, pokazując, jak daleko sięga łączenie.</li>
+    <li><b>Powiększ zaznaczone</b>: powiększa zaznaczone klatki o podaną liczbę pikseli z każdej strony, tak jak widać na ekranie (lewo, prawo, góra, dół). Wartości ujemne zmniejszają.</li>
+    <li><b>Przycięcie</b>: włącz <b>Pokaż linie przycięcia</b>, ustaw lub przeciągnij żółte linie u góry i u dołu pasków, potem <b>Przytnij wszystkie klatki</b>: każda klatka wchodząca w żółte pasy zostanie do nich przycięta.</li>
+    <li><b>Orientacja klatki</b>: nadaj zaznaczonym klatkom własny obrót, odbicie lub negatyw (dostają pomarańczowy kolor „własnych ustawień”). <b>Wyczyść</b> przywraca orientację globalną.</li>
+  </ul>
+</section>
+
+<section id="detect">
+  <h2>Wykrywanie klatek</h2>
+  <p>Detekcja znajduje jasne klatki na ciemnym filmie na podstawie pasków podglądu. Klatki zaczynające się w wykrywanym zakresie są zastępowane; klatki poza nim zostają.</p>
+  <h3>Zanim zaczniesz</h3>
+  <p>Gdy włączone jest <b>Użyj tonacji z Korekty</b>, wykrywanie widzi dokładnie to, co pokazują paski. Przejdź do <a href="#adjust">Korekty</a> i podnieś gammę, jasność i kontrast, aż strony będą prawie białe na czarnym tle — i dopiero wtedy wykrywaj. Działa to dużo lepiej niż wykrywanie na surowym skanie.</p>
+  <h3>Czułość</h3>
+  <ul>
+    <li><b>Próg</b> (1–254): jak jasny musi być piksel (po krzywej tonacji), aby liczył się jako strona.</li>
+    <li><b>Min. szerokość / Min. długość</b>: mniejsze jasne obszary są pomijane (piksele w pełnej rozdzielczości).</li>
+    <li><b>Pokazuj klatki na bieżąco</b>: klatki pojawiają się w trakcie wykrywania, a widok podąża za czytanym paskiem.</li>
+    <li><b>Automatyczny próg dla każdego paska</b>: dobiera próg dla każdego paska z jego histogramu jasności (granica między stroną a tłem). Przydaje się, gdy oświetlenie zmienia się wzdłuż rolki; paski pustego filmu używają progu ręcznego.</li>
+    <li><b>Ciemne klatki na jasnym filmie</b>: odwraca wykrywanie.</li>
+  </ul>
+  <h3>Ustawienia zaawansowane</h3>
+  <table>
+    <tr><th>Ustawienie</th><th>Działanie</th></tr>
+    <tr><td>Min. ciąg</td><td>Jasny piksel liczy się tylko w ciągu co najmniej tylu jasnych pikseli w poprzek filmu. Usuwa kurz i szare tło, przez które ramki wychodzą za szerokie. Spróbuj 16–30 px.</td></tr>
+    <tr><td>Zasięg styku (szerokość)</td><td>Ciemne przerwy do tej wielkości w poprzek filmu nadal łączą dwie jasne części linii.</td></tr>
+    <tr><td>Zasięg styku (długość)</td><td>Ciemne linie do tej długości wzdłuż filmu nie dzielą klatki na dwie (także między paskami).</td></tr>
+    <tr><td>Maks. długość</td><td>Dłuższe klatki są dzielone na równe części (0 = wyłączone).</td></tr>
+    <tr><td>Naddatek (szerokość / długość)</td><td>Powiększa każdą wykrytą klatkę o margines (wartości ujemne zmniejszają).</td></tr>
+  </table>
+  <p><b>Domyślne</b> przywraca te wartości. Ustawienia wykrywania są zapamiętywane na tym komputerze.</p>
+  <h3>Zakres i obszar pomijany</h3>
+  <ul>
+    <li><b>Cała rolka</b> albo <b>Zakres pasków</b>. Wpisanie paska „Od” / „Do” albo prawy przycisk na pasku i <i>Ustaw tu początek / koniec wykrywania</i> przełącza na zakres; zielony i czerwony znacznik pokazują go na paskach. Przycisk wykrywania mówi, co zrobi.</li>
+    <li><b>Pomiń górę / dół</b> razem z <b>Używaj i pokazuj obszar pomijany</b>: niebieskie pasy przy krawędziach pasków są pomijane przy wykrywaniu. Przeciągnij niebieskie linie lub wpisz wartości.</li>
+  </ul>
+</section>
+
+<section id="markers">
+  <h2>Znaczniki folderów i sugestie</h2>
+  <p>Żółty <b>znacznik folderu</b> zaczyna nowy folder eksportu. Striplight potrafi zasugerować początki folderów na podstawie nietypowo dużych przerw między klatkami (pusty film między dokumentami).</p>
+  <ul>
+    <li><b>Sugeruj znaczniki</b> oznacza prawdopodobne początki na fioletowo. <b>Rygor</b> (10–200): więcej znaczy mniej, ale pewniejszych sugestii; przesunięcie suwaka odświeża sugestie. Na prawdziwych rolkach dobrze działa 80–120.</li>
+    <li><b>Sugeruj klatkę przed przerwą</b> oznacza ostatnią klatkę przed przerwą zamiast pierwszej po niej.</li>
+    <li><b>Do początku / Do końca</b> sugerują tylko przed albo po jednej zaznaczonej klatce.</li>
+    <li><b>Zaznacz sugerowane</b> i sprawdź je; <kbd>Z</kbd> przełącza pojedynczą sugestię. <b>Utwórz znaczniki</b> zamienia wszystkie sugestie na znaczniki folderów.</li>
+    <li><b>Wyczyść sugerowane</b>, <b>Wyczyść zaznaczone</b>, <b>Co N-ty</b> (czyści co N-tą sugestię przed / po zaznaczonej klatce) oraz <b>Wyczyść znaczniki</b> przed / po zaznaczonej klatce pomagają posprzątać.</li>
+  </ul>
+  <div class="tip">Aby sprawdzić znaczniki, otwórz okno podglądu na znaczniku i naciskaj <kbd>F</kbd> / <kbd>G</kbd>, aby przeskakiwać między znacznikami. Duży pasek celu pokazuje numer folderu, folder docelowy i nazwę pliku — możesz je porównać z tym, co jest napisane na stronie.</div>
+</section>
+
+<section id="adjust">
+  <h2>Korekta: tonacja i orientacja</h2>
+  <h3>Tonacja</h3>
+  <ul>
+    <li><b>Metoda</b>: <i>Striplight (bieżąca)</i> (domyślna), <i>Jak w Quantum</i> (zakresy suwaków QuantumScan: kontrast 64 i gamma 0 są neutralne), metody krzywych oraz metody adaptacyjne (<i>Automatyczne poziomy</i>, <i>Kontrast lokalny (CLAHE)</i>, <i>Wyrównanie ekspozycji</i>, <i>Wyrównanie tła</i>) z suwakiem <b>Siła</b>.</li>
+    <li><b>Kontrast, Jasność, Gamma</b> zmieniają paski na bieżąco i działają w podglądzie i eksporcie.</li>
+    <li><b>Krzywe ratunkowe</b>: rozjaśnienie cieni, odzyskiwanie świateł, krzywa S, ratowanie dokumentu, miękki kontrast — dla wyblakłego lub zbyt gęstego filmu.</li>
+    <li>Wyłączenie <b>Pokaż na paskach</b> pokazuje w widoku pasków nietknięty skan.</li>
+  </ul>
+  <p>Metody adaptacyjne analizują każdą klatkę podczas eksportu; paski pokazują przybliżenie dla całego paska, więc dokładny wynik zobaczysz w podglądzie (<kbd>Enter</kbd>).</p>
+  <h3>Własna tonacja zaznaczonych klatek</h3>
+  <p>W sekcji <b>Zastosuj tonację do</b> wybierz <b>Zaznaczone klatki</b>: suwaki pokazują wtedy tonację zaznaczonej klatki, a każda zmiana nadaje zaznaczonym klatkom <b>własną, pełną tonację</b> (metodę, krzywe, suwaki, siłę). Ta tonacja jest zablokowana: późniejsza zmiana tonacji globalnej nigdy tych klatek nie zmieni. Są pokazywane w swojej tonacji na paskach, w podglądzie i w eksporcie.</p>
+  <ul>
+    <li><b>Zaznacz własne</b> zaznacza każdą klatkę z własną tonacją.</li>
+    <li><b>Tonacja globalna</b> przywraca zaznaczonym klatkom tonację globalną.</li>
+  </ul>
+  <h3>Wyostrzanie i orientacja</h3>
+  <p><b>Wyostrzanie</b> (tryb i ilość) działa w podglądzie i eksporcie wszystkich klatek. <b>Orientacja</b> (obrót, odbicie, negatyw) dotyczy wszystkich klatek oprócz tych z własną orientacją.</p>
+</section>
+
+<section id="preview">
+  <h2>Okno podglądu</h2>
+  <p>Naciśnij <kbd>Enter</kbd> lub kliknij dwukrotnie klatkę, aby otworzyć podgląd: klatkę dokładnie taką, jaka zostanie wyeksportowana. To osobne okno — trzymaj je na drugim ekranie albo przypnij <b>Na wierzchu</b> (<kbd>T</kbd>). Kliknięcie klatki w głównym oknie pokazuje ją tutaj.</p>
+  <ul>
+    <li><kbd>X</kbd> / <kbd>C</kbd> (lub strzałki) poprzednia / następna klatka; <b>Krok</b> ustala, o ile klatek się przesuwają. <kbd>G</kbd> / <kbd>F</kbd> przeskakują między znacznikami folderów.</li>
+    <li>Kółko powiększa wokół kursora, przeciąganie przesuwa, dwuklik przełącza dopasowanie / 1:1, <kbd>0</kbd> dopasuj, <kbd>1</kbd> 1:1, <kbd>Q</kbd> pełna jakość.</li>
+    <li><kbd>R</kbd> / <kbd>Shift</kbd>+<kbd>R</kbd> obrót, <kbd>M</kbd> odbicie, <kbd>N</kbd> negatyw — tylko dla tej klatki. <kbd>A</kbd> przełącza jej znacznik folderu.</li>
+    <li><b>Pasek celu</b> pokazuje numer folderu, folder docelowy i nazwę pliku tej klatki. <kbd>I</kbd> ukrywa go lub pokazuje. <kbd>Esc</kbd> zamyka okno.</li>
+  </ul>
+</section>
+
+<section id="export">
+  <h2>Eksport</h2>
+  <p>Eksport zapisuje każdą klatkę (albo tylko zaznaczone) jako JPEG, dokładnie tak, jak pokazuje ją podgląd. Pod ustawieniami nazewnictwa podgląd ścieżki pokazuje, dokąd trafi zaznaczona klatka — sprawdź go przed długim eksportem.</p>
+  <h3>Foldery Quantum (jeden folder na znacznik)</h3>
+  <p>Każdy znacznik folderu zaczyna nowy numerowany folder w folderze wyjściowym (przy <b>Cyfrach licznika</b> 5: <code>00001</code>, <code>00002</code>…); klatki przed pierwszym znacznikiem trafiają do folderu 1. Pliki mają nazwę <b>Prefiks pliku</b> + licznik, np. <code>page_00001.jpg</code>, a licznik w każdym folderze zaczyna się od 1.</p>
+  <p class="note">Przy wyłączonym <b>Folder na znacznik</b> wszystkie pliki trafiają do samego folderu wyjściowego. Ponieważ licznik zaczyna się od nowa przy każdym znaczniku (jak w wersji Lazarus), używaj tego tylko dla rolek bez znaczników.</p>
+  <h3>Lista archiwalna (jeden wiersz na znacznik)</h3>
+  <p>Wklej jeden wiersz na każdy znacznik folderu. Części wiersza oddzielone <code>;</code> stają się zagnieżdżonymi folderami i początkiem nazwy pliku:</p>
+  <pre>;73;524;0;0;80
+;73;524;0;0;81</pre>
+  <p>Średniki na początku są pomijane. Klatki pierwszego znacznika trafiają do <code>73\524\0\0\80\73_524_0_0_80_00001.jpg</code>, <code>…_00002.jpg</code> i tak dalej; klatki drugiego znacznika do <code>73\524\0\0\81\</code>. Podgląd ścieżki pokazuje liczbę folderów i wierszy listy — jeśli brakuje wierszy, zmienia kolor na czerwony, zanim zaczniesz eksport.</p>
+  <h3>Opcje wyjścia</h3>
+  <ul>
+    <li><b>Jakość</b> (JPEG 1–100), <b>Wątki</b> (klatki budowane równolegle), <b>Pamięć pasków</b> (pełne paski trzymane w pamięci).</li>
+    <li><b>Pomiń istniejące pliki</b> — kontynuacja przerwanego eksportu.</li>
+    <li><b>Użyj podglądów, gdy brakuje pasków</b> — niższa rozdzielczość, ale bez dziur.</li>
+    <li><b>Zapisuj przez lokalny folder tymczasowy</b> — każdy plik jest najpierw zapisywany lokalnie, a potem kopiowany na udział sieciowy (szybciej i bezpieczniej na wolnych udziałach).</li>
+    <li><b>Przygotuj foldery</b> tworzy od razu wszystkie foldery wyjściowe, bez eksportu.</li>
+  </ul>
+  <p>W trakcie eksportu: <b>Pauza</b> / <b>Wznów</b> i <b>Stop</b>. Wyeksportowane klatki robią się niebieskie. Nieudane klatki są wypisane pod paskiem postępu; kliknij jedną, aby ją pokazać.</p>
+</section>
+
+<section id="notes">
+  <h2>Notatki</h2>
+  <p>Panel Notatki to edytor Markdown dla rolki: uszkodzenia, brakujące klatki, opisy pudeł, pytania do archiwum. Notatki są zapisywane w projekcie <code>.slf</code>.</p>
+</section>
+
+<section id="shortcuts">
+  <h2>Skróty klawiszowe</h2>
+  <p>Każde polecenie może mieć własne klawisze: naciśnij <kbd>?</kbd> (lub przycisk klawiatury), kliknij <b>+</b> przy poleceniu i naciśnij klawisz; <b>×</b> usuwa klawisz. Klawisz używany gdzie indziej przechodzi do nowego polecenia. <b>Przywróć domyślne</b> przywraca poniższe ustawienia.</p>
+  <table>
+    <tr><th>Polecenie</th><th>Domyślne klawisze</th></tr>
+    <tr><td>Otwórz / Zapisz / Zapisz jako</td><td><kbd>Ctrl</kbd>+<kbd>O</kbd> · <kbd>Ctrl</kbd>+<kbd>S</kbd> · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></td></tr>
+    <tr><td>Następna / poprzednia strona</td><td><kbd>C</kbd> <kbd>Page Down</kbd> · <kbd>X</kbd> <kbd>Page Up</kbd></td></tr>
+    <tr><td>Pierwsza / ostatnia strona</td><td><kbd>Home</kbd> · <kbd>End</kbd></td></tr>
+    <tr><td>Następny / poprzedni znacznik folderu</td><td><kbd>F</kbd> · <kbd>G</kbd></td></tr>
+    <tr><td>Powiększ / pomniejsz</td><td><kbd>+</kbd> <kbd>=</kbd> · <kbd>−</kbd></td></tr>
+    <tr><td>Otwórz okno podglądu</td><td><kbd>Enter</kbd></td></tr>
+    <tr><td>Skróty klawiszowe / Pomoc</td><td><kbd>?</kbd> · <kbd>F1</kbd></td></tr>
+    <tr><td>Zaznacz wszystko / odznacz</td><td><kbd>Ctrl</kbd>+<kbd>A</kbd> · <kbd>Ctrl</kbd>+<kbd>D</kbd> <kbd>Esc</kbd></td></tr>
+    <tr><td>Przełącz znacznik folderu</td><td><kbd>A</kbd> <kbd>M</kbd></td></tr>
+    <tr><td>Usuń zaznaczone</td><td><kbd>D</kbd> · <kbd>Delete</kbd></td></tr>
+    <tr><td>Scal parami / Połącz / Podziel</td><td><kbd>E</kbd> · <kbd>J</kbd> · <kbd>S</kbd></td></tr>
+    <tr><td>Przełącz sugerowany znacznik</td><td><kbd>Z</kbd></td></tr>
+    <tr><td>Cofnij</td><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td></tr>
+  </table>
+  <p>Polecenia bez domyślnego klawisza (wypełnij przerwy, połącz bliskie, powiększ, przycięcie, zaznacz stronę / sekcję folderu, wykrywanie, sugestie, start eksportu, Grupa, Auto, motyw…) można przypisać w edytorze. Klawisze okna podglądu są opisane w sekcji <a href="#preview">Okno podglądu</a> i zmienia się je w tym samym edytorze.</p>
+</section>
+
+<section id="language">
+  <h2>Język i tłumaczenie</h2>
+  <p>Przycisk <b>EN / PL</b> na górnym pasku przełącza między angielskim a polskim. Oba okna przeładowują się w nowym języku; otwarta rolka zostaje otwarta.</p>
+  <p>Aby zmienić tłumaczenie, wybierz w tym menu <b>Edytuj tłumaczenie</b>. Striplight skopiuje <code>pl.json</code> do <code>%APPDATA%\StriplightPRO\lang\</code> i otworzy folder. Każdy wiersz łączy angielski tekst z tłumaczeniem; zmień prawą stronę i przełącz język ponownie, aby zobaczyć efekt. Twój plik ma pierwszeństwo przed wbudowanym i przetrwa aktualizacje. Usunięte wiersze wracają do wbudowanego tłumaczenia.</p>
+</section>
+
+<section id="files">
+  <h2>Pliki, ustawienia i wskazówki</h2>
+  <ul>
+    <li>Ustawienia (okno, motyw, język, skróty, ostatnie foldery): <code>%APPDATA%\StriplightPRO\settings.json</code>.</li>
+    <li>Widok pasków i wykrywanie korzystają z plików podglądu rolki; eksport używa pełnych pasków. Jeśli brakuje podglądów, wiersz stanu po wykrywaniu podaje, ilu i gdzie ich szukano.</li>
+    <li>Na udziałach sieciowych ustaw umiarkowaną liczbę <b>Wątków</b> (4–8) i włącz <b>Zapisuj przez lokalny folder tymczasowy</b>.</li>
+    <li>Striplight potrzebuje środowiska Microsoft Edge WebView2 Runtime (jest już w Windows 10/11).</li>
+  </ul>
+</section>

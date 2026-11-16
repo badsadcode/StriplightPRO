@@ -67,7 +67,7 @@ class P(HTMLParser):
             add(d)
 
 
-for f in ('index.html', 'preview.html'):
+for f in ('index.html', 'preview.html', 'help.html'):
     src = open(os.path.join(WWW, f), encoding='utf-8').read()
     m = re.search(r'<title>(.*?)</title>', src)
     if m:
