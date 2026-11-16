@@ -194,6 +194,12 @@ public sealed class AppController
         // Separate preview window
         _bridge.On("preview.open", args => { _host.OpenPreview(BridgeHost.Arg(args, "index", 0)); return null; });
         _bridge.On("preview.close", _ => { _host.ClosePreview(); return null; });
+        // Main-window selection follows into the preview, but only when it is already open.
+        _bridge.On("preview.follow", args =>
+        {
+            if (_host.Preview is not null) _bridge.Emit("preview.show", new { index = BridgeHost.Arg(args, "index", 0) });
+            return null;
+        });
         _bridge.On("preview.frame", args => PreviewFrameInfo(BridgeHost.Arg(args, "index", 0)));
         _bridge.On("preview.select", args => { _bridge.Emit("preview.selected", new { index = BridgeHost.Arg(args, "index", 0) }); return null; });
         _bridge.On("preview.loaded", args => { _bridge.Emit("preview.loaded", args.Clone()); return null; });

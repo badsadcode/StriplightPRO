@@ -35,7 +35,7 @@ const state = {
 };
 
 const view = new StripView($('#strip-canvas'), {
-  onSelectionChanged: () => { refreshFramesPanel(); scrubber.invalidate(); },
+  onSelectionChanged: () => { refreshFramesPanel(); scrubber.invalidate(); followInPreview(); },
   onPageChanged: () => { refreshPager(); scrubber.invalidate(); },
   onHover: (t) => { $('#status-hover').textContent = t; },
   onFramesEdited: (indices) => patchFrames(indices),
@@ -671,6 +671,17 @@ function addFailure(frameIdx, error) {
 
 // ------------------------------------------------------------------ preview window
 
+// Clicking a frame in the main window shows it in the preview window (if open).
+let followFrom = -1;   // index the preview itself just selected: don't echo it back
+let followTimer = 0;
+function followInPreview() {
+  if (view.selected.size !== 1) return;
+  const idx = [...view.selected][0];
+  if (idx === followFrom) { followFrom = -1; return; }
+  clearTimeout(followTimer);
+  followTimer = setTimeout(() => call('preview.follow', { index: idx }).catch(() => {}), 60);
+}
+
 /** Opens (or reuses) the separate preview window on a frame. */
 function openFrameModal(idx) {
   if (!view.frames[idx]) return;
@@ -680,6 +691,7 @@ function openFrameModal(idx) {
 
 on('preview.selected', (d) => {
   if (!view.frames[d.index]) return;
+  followFrom = d.index;
   view.select(d.index);
   view.revealFrame(d.index);
 });
