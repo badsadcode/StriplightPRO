@@ -569,14 +569,18 @@ async function applyTrim() {
   sendPanels(true);
 }
 
-async function selectSection(idx) {
-  const r = await run('frames.section', { index: idx, includeSuggested: true });
+/**
+ * Folder section: from the yellow marker before the frame to the next yellow marker.
+ * Suggested section: from the nearest suggested (purple) or yellow start to the next one.
+ */
+async function selectSection(idx, suggested = false) {
+  const r = await run('frames.section', { index: idx, includeSuggested: suggested });
   const ids = [];
   for (let i = r.start; i <= r.end; i++) ids.push(i);
   view.setFrames(view.frames, ids);
   refreshFramesPanel();
   scrubber.invalidate();
-  status(t('Selected folder section: frames {a}–{b}', { a: r.start + 1, b: r.end + 1 }));
+  status(t(suggested ? 'Selected suggested section: frames {a}–{b}' : 'Selected folder section: frames {a}–{b}', { a: r.start + 1, b: r.end + 1 }));
 }
 
 async function deleteSection(idx) {
@@ -1195,7 +1199,9 @@ function showContextMenu(x, y, hit, strip) {
     hit >= 0 && { label: t('Frame {i}', { i: hit + 1 }), head: true },
     { label: t('Preview frame'), key: 'previewFrame', icon: 'eye', on: hit >= 0, run: () => openFrameModal(hit) },
     { label: t('Toggle folder marker'), key: 'toggleMarker', icon: 'flag', on: sel, run: () => frameCommand('frames.toggleMarker') },
+    { label: t('Toggle suggested marker'), key: 'toggleSuggested', icon: 'sparkles', on: sel, run: () => frameCommand('frames.toggleSuggested') },
     { label: t('Select folder section'), key: 'selectSection', icon: 'grid-2x2', on: hit >= 0, run: () => selectSection(hit) },
+    { label: t('Select suggested section'), key: 'selectSuggestedSection', icon: 'grid-2x2', on: hit >= 0, run: () => selectSection(hit, true) },
     { label: t('Delete folder section from marker'), key: 'deleteSection', icon: 'trash-2', on: hit >= 0, danger: true, run: () => deleteSection(hit) },
     'sep',
     { label: t('Clear exported mark'), icon: 'x', on: hit >= 0 && view.frames[hit]?.isExported, run: () => clearExported([hit]) },
@@ -1292,11 +1298,7 @@ const commands = {
   merge: () => view.selected.size && frameTool('frames.merge'),
   combine: () => view.selected.size && frameTool('frames.combine'),
   split: () => view.selected.size && frameTool('frames.split', { parts: Number($('#split-parts').value) || 2 }),
-  toggleSuggested: () => {
-    const sel = selection();
-    if (sel.length !== 1) { toast(t('Select exactly one frame to toggle its suggestion.')); return; }
-    return frameCommand('frames.toggleSuggested', { index: sel[0] });
-  },
+  toggleSuggested: () => view.selected.size && frameCommand('frames.toggleSuggested'),
   undo,
   nextMarker: () => jumpMarker(true),
   prevMarker: () => jumpMarker(false),
@@ -1305,6 +1307,7 @@ const commands = {
   toggleMulti: () => { $('#multi-edit').click(); },
   toggleCw: () => { $('#rotate-cw').click(); },
   selectSection: () => { const i = selection()[0]; if (i !== undefined) selectSection(i); },
+  selectSuggestedSection: () => { const i = selection()[0]; if (i !== undefined) selectSection(i, true); },
   deleteSection: () => { const i = selection()[0]; if (i !== undefined) deleteSection(i); },
   deleteQuick: () => deleteSelected(false),
   closeGaps: () => frameTool('frames.closeGaps'),

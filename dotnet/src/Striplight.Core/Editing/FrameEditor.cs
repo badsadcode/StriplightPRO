@@ -169,6 +169,15 @@ public static class FrameEditor
         if (index >= 0 && index < frames.Count) frames[index].IsSuggested = !frames[index].IsSuggested;
     }
 
+    /// <summary>Like the folder marker: sets the suggestion on all given frames, or clears it if they all have it.</summary>
+    public static void ToggleSuggested(List<FrameRecord> frames, IEnumerable<int> indices)
+    {
+        var sel = indices.Where(i => i >= 0 && i < frames.Count).Distinct().ToList();
+        if (sel.Count == 0) return;
+        bool set = !sel.All(i => frames[i].IsSuggested);
+        foreach (int i in sel) frames[i].IsSuggested = set;
+    }
+
     /// <summary>F/G: next or previous folder marker after <paramref name="from"/>, wrapping around; -1 if none.</summary>
     public static int FindMarker(IReadOnlyList<FrameRecord> frames, int from, bool forward)
     {

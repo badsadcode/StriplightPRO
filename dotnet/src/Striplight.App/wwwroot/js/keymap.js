@@ -33,6 +33,7 @@ export const COMMANDS = [
   { id: 'selectNone', group: 'main', section: 'Select', label: 'Select none', keys: ['Ctrl+D'] },
   { id: 'selectPage', group: 'main', section: 'Select', label: 'Select page', keys: [] },
   { id: 'selectSection', group: 'main', section: 'Select', label: 'Select folder section', keys: [] },
+  { id: 'selectSuggestedSection', group: 'main', section: 'Select', label: 'Select suggested section', keys: [] },
   { id: 'selectFlagged', group: 'main', section: 'Select', label: 'Select flagged (size check)', keys: [] },
   { id: 'toggleMarker', group: 'main', section: 'Edit', label: 'Toggle folder marker', keys: ['A', 'M'] },
   { id: 'deleteQuick', group: 'main', section: 'Edit', label: 'Delete selected (no question)', keys: ['D'] },

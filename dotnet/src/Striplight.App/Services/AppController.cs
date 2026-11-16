@@ -288,7 +288,9 @@ public sealed class AppController
         _bridge.On("frames.toggleSuggested", args =>
         {
             PushUndo();
-            FrameEditor.ToggleSuggested(_project.Frames, BridgeHost.Arg(args, "index", -1));
+            var many = Indices(args);
+            if (many.Count > 0) FrameEditor.ToggleSuggested(_project.Frames, many);
+            else FrameEditor.ToggleSuggested(_project.Frames, BridgeHost.Arg(args, "index", -1));
             return Changed(args);
         });
         // Repair tools (Lazarus Framing tab): fill gaps, join close, expand, trim, sections.
@@ -324,8 +326,11 @@ public sealed class AppController
         });
         _bridge.On("frames.section", args =>
         {
-            var (start, end) = FrameRepair.Section(_project.Frames, BridgeHost.Arg(args, "index", -1), BridgeHost.Arg(args, "includeSuggested", true));
-            if (start < 0) throw new BridgeException(Loc.T("No folder marker before this frame."));
+            bool suggested = BridgeHost.Arg(args, "includeSuggested", false);
+            var (start, end) = FrameRepair.Section(_project.Frames, BridgeHost.Arg(args, "index", -1), suggested);
+            if (start < 0) throw new BridgeException(suggested
+                ? Loc.T("No suggested or folder marker before this frame.")
+                : Loc.T("No folder marker before this frame."));
             return new { start, end };
         });
         _bridge.On("frames.deleteSection", args =>
