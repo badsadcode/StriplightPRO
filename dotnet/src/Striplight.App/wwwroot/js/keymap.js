@@ -15,6 +15,8 @@ export const COMMANDS = [
   { id: 'nextMarker', group: 'main', section: 'Navigate', label: 'Next folder marker', keys: ['F'] },
   { id: 'prevMarker', group: 'main', section: 'Navigate', label: 'Previous folder marker', keys: ['G'] },
   { id: 'nextAbnormal', group: 'main', section: 'Navigate', label: 'Next odd-size frame', keys: [] },
+  { id: 'nextSmall', group: 'main', section: 'Navigate', label: 'Next undersized frame', keys: [] },
+  { id: 'nextBig', group: 'main', section: 'Navigate', label: 'Next oversized frame', keys: [] },
   { id: 'zoomIn', group: 'main', section: 'View', label: 'Zoom in', keys: ['+', '='] },
   { id: 'zoomOut', group: 'main', section: 'View', label: 'Zoom out', keys: ['-'] },
   { id: 'toggleAuto', group: 'main', section: 'View', label: 'Auto strips per row on/off', keys: [] },
@@ -30,6 +32,7 @@ export const COMMANDS = [
   { id: 'selectNone', group: 'main', section: 'Select', label: 'Select none', keys: ['Ctrl+D'] },
   { id: 'selectPage', group: 'main', section: 'Select', label: 'Select page', keys: [] },
   { id: 'selectSection', group: 'main', section: 'Select', label: 'Select folder section', keys: [] },
+  { id: 'selectFlagged', group: 'main', section: 'Select', label: 'Select flagged (size check)', keys: [] },
   { id: 'toggleMarker', group: 'main', section: 'Edit', label: 'Toggle folder marker', keys: ['A', 'M'] },
   { id: 'deleteQuick', group: 'main', section: 'Edit', label: 'Delete selected (no question)', keys: ['D'] },
   { id: 'deleteSelected', group: 'main', section: 'Edit', label: 'Delete selected (asks above 20)', keys: ['Delete'] },
@@ -51,6 +54,7 @@ export const COMMANDS = [
   { id: 'acceptSuggested', group: 'main', section: 'Detect & export', label: 'Make suggested into markers', keys: [] },
   { id: 'clearSuggested', group: 'main', section: 'Detect & export', label: 'Clear suggested', keys: [] },
   { id: 'exportStart', group: 'main', section: 'Detect & export', label: 'Start export', keys: [] },
+  { id: 'exportRetry', group: 'main', section: 'Detect & export', label: 'Re-export failed frames', keys: [] },
 
   // ---- preview window
   { id: 'pv.prev', group: 'preview', section: 'Preview window', label: 'Previous frame', keys: ['X', 'ArrowLeft', 'PageUp'] },

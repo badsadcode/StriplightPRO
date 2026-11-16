@@ -58,7 +58,7 @@
     <li><b>Zoom</b>: <kbd>Ctrl</kbd>+wheel, <kbd>+</kbd> / <kbd>−</kbd>, or the slider.</li>
     <li><b>Strips per row</b>: set the number, or switch on <b>Auto</b> to fit as many as the window allows.</li>
     <li><b>#</b> shows strip numbers. <b>CW</b> switches the source orientation (clockwise + mirror instead of counter-clockwise) for scanners that store strips the other way round.</li>
-    <li><b>Jump</b>: <kbd>F</kbd> / <kbd>G</kbd> next / previous folder marker; <b>Next odd size</b> finds the next red frame.</li>
+    <li><b>Jump</b>: <kbd>F</kbd> / <kbd>G</kbd> next / previous folder marker; <b>Next odd size</b>, <b>Next small</b> and <b>Next big</b> find the next red frame (see <a href="#sizecheck">Size check</a>).</li>
   </ul>
   <p>Strip images come from the roll's preview files, so pages appear quickly even on network shares. Previews are re-rendered when you change the tone.</p>
 </section>
@@ -93,6 +93,18 @@
   </table>
   <h3>Right-click menu</h3>
   <p>Right-click a frame or the film for: preview, folder marker, select / delete the folder section (from a marker to the next one), clear exported marks, set the detection start or end at that strip, clear per-frame settings and delete.</p>
+</section>
+
+<section id="sizecheck">
+  <h2>Size check (odd-size frames)</h2>
+  <p>Frames much longer or shorter than the usual frame are flagged red — often two pages detected as one, or a fragment. The check compares each frame's length along the film with the <b>median</b> frame length of the roll.</p>
+  <ul>
+    <li><b>Flag oversized frames</b> + <b>% longer than the median</b> (0–200, default 50): a frame more than that much longer than the median is flagged.</li>
+    <li><b>Flag undersized frames</b> + <b>% shorter than the median</b> (0–99, default 50): a frame more than that much shorter is flagged.</li>
+    <li>Switching a check off flags nothing of that kind. The colours update live while you move the sliders; the line below shows the median and how many frames are flagged.</li>
+    <li><b>Select flagged</b> selects them all; <b>Next odd size</b>, <b>Next small</b> and <b>Next big</b> jump from the selected frame to the next one.</li>
+  </ul>
+  <p>The settings are remembered.</p>
 </section>
 
 <section id="repair">
@@ -191,6 +203,7 @@
   <pre>;73;524;0;0;80
 ;73;524;0;0;81</pre>
   <p>Leading <code>;</code> are ignored. The first marker's frames go to <code>73\524\0\0\80\73_524_0_0_80_00001.jpg</code>, <code>…_00002.jpg</code> and so on; the second marker's to <code>73\524\0\0\81\</code>. The path preview shows how many folders and list rows there are — if rows are missing it turns red before you export.</p>
+  <p><b>Build from folders…</b> creates the list from an existing folder structure: choose the root folder and Striplight adds one row for every folder that has no subfolders, in natural order (2 before 10), e.g. <code>root\73\524\0\0\80</code> becomes <code>;73;524;0;0;80</code>. Folder names containing <code>;</code> are skipped.</p>
   <h3>Output options</h3>
   <ul>
     <li><b>Quality</b> (JPEG 1–100), <b>Workers</b> (frames built in parallel), <b>Strip cache</b> (full strips kept in memory).</li>
@@ -199,7 +212,7 @@
     <li><b>Stage through local temp</b> — write each file locally first, then copy it to the network share (faster and safer on slow shares).</li>
     <li><b>Prepare folders</b> creates all output folders now, without exporting.</li>
   </ul>
-  <p>During export: <b>Pause</b> / <b>Resume</b> and <b>Stop</b>. Exported frames turn blue. Failed frames are listed under the progress bar; click one to show it.</p>
+  <p>During export: <b>Pause</b> / <b>Resume</b> and <b>Stop</b>. Exported frames turn blue. Failed frames are listed under the progress bar; click one to show it. <b>Re-export failed</b> then exports only those frames again — for example after a network share came back.</p>
 </section>
 
 <section id="notes">

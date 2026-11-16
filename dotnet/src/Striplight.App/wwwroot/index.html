@@ -141,7 +141,22 @@
             <button class="btn" data-cmd="selectAll" data-needs-roll><i data-icon="check-check"></i>Select all</button>
             <button class="btn" data-cmd="selectPage" data-needs-roll><i data-icon="grid-2x2"></i>Select page</button>
             <button class="btn" data-cmd="selectNone" data-needs-roll><i data-icon="x"></i>Select none</button>
-            <button class="btn" data-cmd="nextAbnormal" data-needs-roll><i data-icon="crosshair"></i>Next odd size</button>
+            <button class="btn" data-cmd="selectSection" data-needs-sel title="From the folder marker before the selected frame to the next marker"><i data-icon="flag"></i>Select folder section</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Size check</h3>
+          <label class="switch"><input type="checkbox" id="sz-over" checked><span></span>Flag oversized frames</label>
+          <div class="slider standalone" data-key="szover"><span>% longer than the median</span><input type="number" id="sz-over-num" min="0" max="200" value="50"><input type="range" id="sz-over-range" min="0" max="200" value="50"></div>
+          <label class="switch"><input type="checkbox" id="sz-under" checked><span></span>Flag undersized frames</label>
+          <div class="slider standalone" data-key="szunder"><span>% shorter than the median</span><input type="number" id="sz-under-num" min="0" max="99" value="50"><input type="range" id="sz-under-range" min="0" max="99" value="50"></div>
+          <p class="hint" id="sz-hint"></p>
+          <div class="btn-grid">
+            <button class="btn" data-cmd="selectFlagged" data-needs-roll title="Select every frame flagged by the size check"><i data-icon="check-check"></i>Select flagged</button>
+            <button class="btn" data-cmd="nextAbnormal" data-needs-roll title="Next oversized or undersized frame"><i data-icon="crosshair"></i>Next odd size</button>
+            <button class="btn" data-cmd="nextSmall" data-needs-roll title="Next undersized frame"><i data-icon="zoom-out"></i>Next small</button>
+            <button class="btn" data-cmd="nextBig" data-needs-roll title="Next oversized frame"><i data-icon="zoom-in"></i>Next big</button>
           </div>
         </div>
 
@@ -374,6 +389,7 @@
           </div>
           <label class="field" id="exp-archive-wrap" hidden>Archive list <small data-i18n-html>parts separated by <code>;</code> become folders and the file name</small>
             <textarea id="exp-archive" rows="6" spellcheck="false" placeholder="Box 1;Folder A&#10;Box 1;Folder B"></textarea>
+            <button class="btn" data-cmd="archiveFromFolders" title="Choose a root folder: one list row is created for each folder that has no subfolders"><i data-icon="folder-open"></i>Build from folders…</button>
           </label>
           <div class="path-preview" id="exp-example"></div>
         </div>
@@ -404,6 +420,7 @@
           <button class="btn" data-cmd="prepareFolders" data-needs-roll title="Create all output folders now, without exporting"><i data-icon="folder"></i>Prepare folders</button>
           <div class="progress"><div class="progress-bar" id="exp-bar"></div></div>
           <div class="status-line" id="exp-status">Ready</div>
+          <button class="btn" data-cmd="exportRetry" id="exp-retry" hidden title="Export only the frames that failed last time"><i data-icon="rotate-cw"></i><span>Re-export failed</span></button>
           <ul class="failures" id="exp-failures"></ul>
         </div>
       </section>

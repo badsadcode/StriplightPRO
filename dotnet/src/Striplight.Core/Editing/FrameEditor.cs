@@ -8,10 +8,27 @@ namespace Striplight.Core.Editing;
 /// </summary>
 public static class FrameEditor
 {
-    public static void Refresh(List<FrameRecord> frames, double oversize = 1.5, double undersize = 0.5)
+    /// <summary>Oversize factor of the median frame length (Lazarus: 1 + percent / 100; huge = off).</summary>
+    public static double OversizeFactor { get; private set; } = 1.5;
+    /// <summary>Undersize factor of the median frame length (Lazarus: 1 - percent / 100; 0 = off).</summary>
+    public static double UndersizeFactor { get; private set; } = 0.5;
+
+    /// <summary>
+    /// Size check like the Lazarus "Detect Oversized / Undersized Frames" box: a frame is
+    /// oversized when it is more than <paramref name="overPercent"/> % longer than the median
+    /// frame (0..200), undersized when it is more than <paramref name="underPercent"/> % shorter
+    /// (0..99). A switched-off check flags nothing.
+    /// </summary>
+    public static void SetSizeRules(bool overOn, int overPercent, bool underOn, int underPercent)
+    {
+        OversizeFactor = overOn ? 1.0 + Math.Clamp(overPercent, 0, 200) / 100.0 : 9999.0;
+        UndersizeFactor = underOn ? 1.0 - Math.Clamp(underPercent, 0, 99) / 100.0 : 0.0;
+    }
+
+    public static void Refresh(List<FrameRecord> frames)
     {
         FrameList.SortByPosition(frames);
-        FrameList.MarkOversizedUndersized(frames, FrameList.CalculateStats(frames, oversize, undersize));
+        FrameList.MarkOversizedUndersized(frames, FrameList.CalculateStats(frames, OversizeFactor, UndersizeFactor));
     }
 
     public static void Delete(List<FrameRecord> frames, IEnumerable<int> indices)

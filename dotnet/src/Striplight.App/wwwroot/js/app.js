@@ -302,19 +302,62 @@ async function deleteSelected(askConfirm = true) {
   status(tn(n, 'Deleted {n} frame', 'Deleted {n} frames'));
 }
 
-function nextAbnormal() {
+/** Next flagged frame after the selection (Lazarus "Next Red / Next Small / Next Big"). */
+function nextAbnormal(mode = 0) {
   const frames = view.frames;
   if (!frames.length) return;
+  const match = (f) => (mode < 0 ? f.isUndersized : mode > 0 ? f.isOversized : f.isOversized || f.isUndersized);
   const start = selection().at(-1) ?? -1;
   for (let k = 1; k <= frames.length; k++) {
     const i = (start + k) % frames.length;
-    if (frames[i].isOversized || frames[i].isUndersized) {
+    if (match(frames[i])) {
       view.select(i);
       view.revealFrame(i);
+      status(t('Frame {i}', { i: i + 1 }) + ` · ${frames[i].trailEdge - frames[i].leadEdge} px`);
       return;
     }
   }
-  toast(t('No odd-size frames on this roll.'));
+  toast(mode < 0 ? t('No undersized frames with these settings.') : mode > 0 ? t('No oversized frames with these settings.') : t('No odd-size frames on this roll.'));
+}
+
+// ---- size check (Lazarus "Detect Oversized / Undersized Frames")
+function sizeRules() {
+  return {
+    overOn: $('#sz-over').checked, overPercent: Number($('#sz-over-num').value) || 0,
+    underOn: $('#sz-under').checked, underPercent: Number($('#sz-under-num').value) || 0,
+  };
+}
+function loadSizeRules(s) {
+  $('#sz-over').checked = s.sizeOverOn ?? true;
+  $('#sz-under').checked = s.sizeUnderOn ?? true;
+  $('#sz-over-num').value = $('#sz-over-range').value = s.sizeOverPercent ?? 50;
+  $('#sz-under-num').value = $('#sz-under-range').value = s.sizeUnderPercent ?? 50;
+  paintRange($('#sz-over-range'));
+  paintRange($('#sz-under-range'));
+}
+const sendSizeRules = debounce(async () => {
+  if (!hasRoll()) { call('frames.sizeRules', sizeRules()).catch(() => {}); return; }
+  const r = await call('frames.sizeRules', sizeRules()).catch((e) => { toast(e.message, 'error'); return null; });
+  if (r) applyFrames(r);
+}, 150);
+function refreshSizeHint() {
+  const frames = view.frames;
+  if (!frames.length) { $('#sz-hint').textContent = ''; return; }
+  const lens = frames.map((f) => f.trailEdge - f.leadEdge).sort((a, b) => a - b);
+  const n = lens.length;
+  const median = n % 2 ? lens[(n - 1) / 2] : Math.floor((lens[n / 2 - 1] + lens[n / 2]) / 2);
+  const big = frames.filter((f) => f.isOversized).length, small = frames.filter((f) => f.isUndersized).length;
+  $('#sz-hint').textContent = `${t('Median frame length: {px} px', { px: median.toLocaleString() })} · ` +
+    `${tn(big, '{n} oversized', '{n} oversized')} · ${tn(small, '{n} undersized', '{n} undersized')}`;
+}
+for (const [k, max] of [['over', 200], ['under', 99]]) {
+  const r = $(`#sz-${k}-range`), n = $(`#sz-${k}-num`);
+  r.addEventListener('input', () => { n.value = r.value; paintRange(r); sendSizeRules(); });
+  n.addEventListener('change', () => {
+    n.value = Math.max(0, Math.min(max, Number(n.value) || 0));
+    r.value = n.value; paintRange(r); sendSizeRules();
+  });
+  $(`#sz-${k}`).addEventListener('change', sendSizeRules);
 }
 
 function refreshFramesPanel() {
@@ -323,6 +366,7 @@ function refreshFramesPanel() {
   $('#stat-markers').textContent = frames.filter((f) => f.isMarker).length.toLocaleString();
   $('#stat-abnormal').textContent = frames.filter((f) => f.isOversized || f.isUndersized).length.toLocaleString();
   $('#stat-selected').textContent = view.selected.size.toLocaleString();
+  refreshSizeHint();
   refreshEnabled();
 
   const sel = selection();
@@ -897,15 +941,24 @@ $$('[data-panel=export] input, [data-panel=export] select, [data-panel=export] t
   });
 });
 
-async function exportStart() {
+// Frames that failed in the last export (by position, so later edits don't confuse them).
+let failedKeys = [];
+function refreshRetry() {
+  $('#exp-retry').hidden = !failedKeys.length || state.exporting;
+  $('#exp-retry span').textContent = `${t('Re-export failed')} (${failedKeys.length.toLocaleString()})`;
+}
+
+async function exportStart(override = null) {
   if (!hasRoll() || state.exporting) return;
-  const args = gatherExport();
+  const args = { ...gatherExport(), ...(override || {}) };
   if (args.scope === 'selected' && !args.indices.length) { toast(t('Select frames to export first.'), 'error'); return; }
   $('#exp-failures').replaceChildren();
   setBar('#exp-bar', 0, 1);
   try {
     const r = await call('export.start', args);
     state.exporting = true;
+    failedKeys = [];
+    refreshRetry();
     state.exportPaused = false;
     $('#exp-pause span').textContent = t('Pause');
     $('#exp-status').textContent = tn(r.jobs, 'Exporting {n} frame to {folder}', 'Exporting {n} frames to {folder}', { folder: r.outputRoot });
@@ -933,12 +986,16 @@ on('export.progress', (p) => {
     view.invalidate();
     scrubber.invalidate();
   }
-  if (p.outcome === 'Failed') addFailure(p.frameIdx, p.error);
+  if (p.outcome === 'Failed') {
+    addFailure(p.frameIdx, p.error);
+    if (view.frames[p.frameIdx]) failedKeys.push(frameKey(view.frames[p.frameIdx]));
+  }
 });
 
 on('export.done', (d) => {
   state.exporting = false;
   refreshEnabled();
+  refreshRetry();
   const msg = d.fatal ? `${t('Export stopped')}: ${d.fatal}`
     : `${d.cancelled ? t('Export stopped') : t('Export finished')}: ` +
       t('{exported} exported, {skipped} skipped, {failed} failed in {seconds} s', {
@@ -1066,7 +1123,34 @@ const commands = {
   selectAll: () => view.selectAll(),
   selectPage: () => view.selectPage(),
   selectNone: () => view.selectNone(),
-  nextAbnormal,
+  nextAbnormal: () => nextAbnormal(0),
+  nextSmall: () => nextAbnormal(-1),
+  nextBig: () => nextAbnormal(1),
+  selectFlagged: () => {
+    const idx = view.frames.map((f, i) => (f.isOversized || f.isUndersized ? i : -1)).filter((i) => i >= 0);
+    if (!idx.length) { toast(t('No odd-size frames on this roll.')); return; }
+    view.setFrames(view.frames, idx);
+    refreshFramesPanel();
+    scrubber.invalidate();
+    status(tn(idx.length, 'Selected {n} flagged frame', 'Selected {n} flagged frames'));
+  },
+  archiveFromFolders: async () => {
+    const r = await run('dialog.archiveFromFolders');
+    if (!r) return;
+    if (!r.rows.length) { toast(t('No subfolders were found under the selected folder.'), 'error'); return; }
+    if ($('#exp-archive').value.trim() && !confirm(tn(r.rows.length, 'Replace the current archive list with {n} row?', 'Replace the current archive list with {n} rows?'))) return;
+    $('#exp-archive').value = r.rows.join('\n');
+    refreshNamingMode();
+    exportChanged();
+    toast(tn(r.rows.length, 'Created {n} archive-list row from {folder}', 'Created {n} archive-list rows from {folder}', { folder: r.root }) +
+      (r.skipped ? ' · ' + tn(r.skipped, 'skipped {n} folder name containing ";"', 'skipped {n} folder names containing ";"') : ''), 'ok');
+  },
+  exportRetry: () => {
+    const keys = new Set(failedKeys);
+    const indices = view.frames.map((f, i) => (keys.has(frameKey(f)) ? i : -1)).filter((i) => i >= 0);
+    if (!indices.length) { toast(t('The failed frames are no longer on the roll.'), 'error'); return; }
+    return exportStart({ scope: 'selected', indices });
+  },
   toggleMarker: () => view.selected.size && frameCommand('frames.toggleMarker'),
   merge: () => view.selected.size && frameTool('frames.merge'),
   combine: () => view.selected.size && frameTool('frames.combine'),
@@ -1374,6 +1458,7 @@ async function init() {
   $('#auto-strips').checked = s.autoStrips;
   setFill(s.frameFillOpacity ?? 35, false);
   $('#strip-numbers').checked = s.showStripNumbers;
+  loadSizeRules(s);
   $('#multi-edit').checked = view.multiEdit = !!s.multiEdit;
   applyTheme(s.theme || 'dark');
   view.setView({ stripsPerRow: s.stripsPerRow, zoom: s.zoom, fillOpacity: s.frameFillOpacity, rotateCw: s.rotateCw, autoStrips: s.autoStrips, showStripNumbers: s.showStripNumbers });

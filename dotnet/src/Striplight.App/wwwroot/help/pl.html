@@ -58,7 +58,7 @@
     <li><b>Powiększenie</b>: <kbd>Ctrl</kbd>+kółko, <kbd>+</kbd> / <kbd>−</kbd> albo suwak.</li>
     <li><b>Paski w rzędzie</b>: wpisz liczbę albo włącz <b>Auto</b>, aby zmieścić tyle, ile pozwala okno.</li>
     <li><b>#</b> pokazuje numery pasków. <b>CW</b> zmienia orientację źródła (zgodnie z ruchem wskazówek zegara + odbicie zamiast przeciwnie) dla skanerów, które zapisują paski odwrotnie.</li>
-    <li><b>Skoki</b>: <kbd>F</kbd> / <kbd>G</kbd> następny / poprzedni znacznik folderu; <b>Następna nietypowa</b> znajduje kolejną czerwoną klatkę.</li>
+    <li><b>Skoki</b>: <kbd>F</kbd> / <kbd>G</kbd> następny / poprzedni znacznik folderu; <b>Następna nietypowa</b>, <b>Następna mała</b> i <b>Następna duża</b> znajdują kolejną czerwoną klatkę (zob. <a href="#sizecheck">Kontrola rozmiaru</a>).</li>
   </ul>
   <p>Obrazy pasków pochodzą z plików podglądu rolki, więc strony pojawiają się szybko nawet na udziałach sieciowych. Po zmianie tonacji podglądy są generowane od nowa.</p>
 </section>
@@ -93,6 +93,18 @@
   </table>
   <h3>Menu prawego przycisku</h3>
   <p>Prawy przycisk na klatce lub filmie: podgląd, znacznik folderu, zaznaczenie / usunięcie sekcji folderu (od znacznika do następnego), czyszczenie oznaczeń eksportu, ustawienie początku lub końca wykrywania na tym pasku, czyszczenie ustawień klatek i usuwanie.</p>
+</section>
+
+<section id="sizecheck">
+  <h2>Kontrola rozmiaru (nietypowe klatki)</h2>
+  <p>Klatki dużo dłuższe lub krótsze od typowej są oznaczane na czerwono — często są to dwie strony wykryte jako jedna albo fragment. Kontrola porównuje długość każdej klatki wzdłuż filmu z <b>medianą</b> długości klatek na rolce.</p>
+  <ul>
+    <li><b>Oznaczaj za duże klatki</b> + <b>% dłuższe niż mediana</b> (0–200, domyślnie 50): klatka dłuższa od mediany o więcej niż tyle jest oznaczana.</li>
+    <li><b>Oznaczaj za małe klatki</b> + <b>% krótsze niż mediana</b> (0–99, domyślnie 50): klatka krótsza o więcej niż tyle jest oznaczana.</li>
+    <li>Wyłączona kontrola nie oznacza klatek danego rodzaju. Kolory zmieniają się na bieżąco podczas przesuwania suwaków; wiersz poniżej pokazuje medianę i liczbę oznaczonych klatek.</li>
+    <li><b>Zaznacz oznaczone</b> zaznacza je wszystkie; <b>Następna nietypowa</b>, <b>Następna mała</b> i <b>Następna duża</b> przeskakują od zaznaczonej klatki do kolejnej.</li>
+  </ul>
+  <p>Ustawienia są zapamiętywane.</p>
 </section>
 
 <section id="repair">
@@ -191,6 +203,7 @@
   <pre>;73;524;0;0;80
 ;73;524;0;0;81</pre>
   <p>Średniki na początku są pomijane. Klatki pierwszego znacznika trafiają do <code>73\524\0\0\80\73_524_0_0_80_00001.jpg</code>, <code>…_00002.jpg</code> i tak dalej; klatki drugiego znacznika do <code>73\524\0\0\81\</code>. Podgląd ścieżki pokazuje liczbę folderów i wierszy listy — jeśli brakuje wierszy, zmienia kolor na czerwony, zanim zaczniesz eksport.</p>
+  <p><b>Utwórz z folderów…</b> buduje listę z istniejącej struktury folderów: wybierz folder główny, a Striplight doda jeden wiersz dla każdego folderu bez podfolderów, w naturalnej kolejności (2 przed 10), np. <code>root\73\524\0\0\80</code> daje <code>;73;524;0;0;80</code>. Foldery z <code>;</code> w nazwie są pomijane.</p>
   <h3>Opcje wyjścia</h3>
   <ul>
     <li><b>Jakość</b> (JPEG 1–100), <b>Wątki</b> (klatki budowane równolegle), <b>Pamięć pasków</b> (pełne paski trzymane w pamięci).</li>
@@ -199,7 +212,7 @@
     <li><b>Zapisuj przez lokalny folder tymczasowy</b> — każdy plik jest najpierw zapisywany lokalnie, a potem kopiowany na udział sieciowy (szybciej i bezpieczniej na wolnych udziałach).</li>
     <li><b>Przygotuj foldery</b> tworzy od razu wszystkie foldery wyjściowe, bez eksportu.</li>
   </ul>
-  <p>W trakcie eksportu: <b>Pauza</b> / <b>Wznów</b> i <b>Stop</b>. Wyeksportowane klatki robią się niebieskie. Nieudane klatki są wypisane pod paskiem postępu; kliknij jedną, aby ją pokazać.</p>
+  <p>W trakcie eksportu: <b>Pauza</b> / <b>Wznów</b> i <b>Stop</b>. Wyeksportowane klatki robią się niebieskie. Nieudane klatki są wypisane pod paskiem postępu; kliknij jedną, aby ją pokazać. <b>Ponów nieudane</b> eksportuje potem tylko te klatki — np. gdy udział sieciowy znów działa.</p>
 </section>
 
 <section id="notes">

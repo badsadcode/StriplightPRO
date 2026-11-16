@@ -31,6 +31,7 @@ public sealed class AppController
     {
         var s = AppSettings.Load();
         Loc.Load(s.Language);
+        FrameEditor.SetSizeRules(s.SizeOverOn, s.SizeOverPercent, s.SizeUnderOn, s.SizeUnderPercent);
         return s;
     }
     private readonly List<List<FrameRecord>> _undo = [];
@@ -219,6 +220,17 @@ public sealed class AppController
             var t = FrameBuilder.Resolve(f, _process.ToProcessSettings(_settings.RotateCw)).Tone;
             return new { method = t.Method, flags = t.Flags, contrast = t.Contrast, brightness = t.Brightness,
                          gamma = t.Gamma, strength = t.Strength, own = f.HasToneOverride };
+        });
+        // Size check thresholds: re-flag odd-size frames (colours, selection, jumps).
+        _bridge.On("frames.sizeRules", args =>
+        {
+            _settings.SizeOverOn = BridgeHost.Arg(args, "overOn", true);
+            _settings.SizeOverPercent = Math.Clamp(BridgeHost.Arg(args, "overPercent", 50), 0, 200);
+            _settings.SizeUnderOn = BridgeHost.Arg(args, "underOn", true);
+            _settings.SizeUnderPercent = Math.Clamp(BridgeHost.Arg(args, "underPercent", 50), 0, 99);
+            FrameEditor.SetSizeRules(_settings.SizeOverOn, _settings.SizeOverPercent, _settings.SizeUnderOn, _settings.SizeUnderPercent);
+            FrameEditor.Refresh(_project.Frames);
+            return _project.Frames;
         });
         _bridge.On("frames.setOverride", args =>
         {
@@ -475,6 +487,15 @@ public sealed class AppController
             string initial = BridgeHost.Arg(args, "initial", "");
             if (Directory.Exists(initial)) dlg.InitialDirectory = initial;
             return dlg.ShowDialog(_owner) == true ? dlg.FolderName : null;
+        });
+        // Archive list from an existing folder structure: one row per leaf folder.
+        _bridge.On("dialog.archiveFromFolders", _ =>
+        {
+            var dlg = new OpenFolderDialog { Title = Loc.T("Select the archive folder structure") };
+            if (Directory.Exists(_settings.LastFolder)) dlg.InitialDirectory = _settings.LastFolder;
+            if (dlg.ShowDialog(_owner) != true) return null;
+            var r = ArchiveFolders.Build(dlg.FolderName);
+            return new { root = dlg.FolderName, rows = r.Rows, skipped = r.SkippedNames };
         });
         _bridge.On("shell.openFolder", args => { Shell.OpenFolder(BridgeHost.Arg(args, "path", "")); return null; });
         _bridge.On("shell.openUrl", args => { Shell.OpenUrl(BridgeHost.Arg(args, "url", "")); return null; });

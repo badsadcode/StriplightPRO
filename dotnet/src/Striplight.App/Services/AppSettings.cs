@@ -21,6 +21,11 @@ public sealed class AppSettings
     public bool MultiEdit { get; set; }
     /// <summary>UI language: "en" (default) or "pl".</summary>
     public string Language { get; set; } = "en";
+    /// <summary>Size check (Lazarus "Detect Oversized / Undersized Frames").</summary>
+    public bool SizeOverOn { get; set; } = true;
+    public int SizeOverPercent { get; set; } = 50;
+    public bool SizeUnderOn { get; set; } = true;
+    public int SizeUnderPercent { get; set; } = 50;
     /// <summary>Custom shortcuts: command id -> keys (e.g. "Ctrl+S"). Empty = built-in defaults.</summary>
     public Dictionary<string, List<string>> KeyBindings { get; set; } = [];
     /// <summary>"dark" or "light".</summary>
