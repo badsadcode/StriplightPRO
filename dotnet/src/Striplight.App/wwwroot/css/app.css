@@ -606,3 +606,13 @@ input[type="range"]:hover::-webkit-slider-thumb { box-shadow: 0 0 0 6px rgba(245
    against their own control, not the page: otherwise inputs further down a long panel make
    the whole window scrollable and clicking one scrolls the app bar out of view. */
 .switch, .seg > label, .chip-toggles label, .vb-toggle { position: relative; }
+
+/* App-bar menus (language) float above everything */
+.app-menu { position: fixed; z-index: 80; min-width: 220px; }
+.lang-btn { min-width: 40px; padding-inline: 10px; font-weight: 650; letter-spacing: .04em; }
+
+/* Longer languages (Polish): grid buttons may wrap to two lines instead of cutting text off */
+.btn-grid .btn { white-space: normal; height: auto; min-height: 32px; padding-block: 5px; line-height: 1.2; text-align: left; }
+.btn-grid .btn kbd { flex: none; }
+.stat { padding-inline: 8px; }
+.rail button span { max-width: 56px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

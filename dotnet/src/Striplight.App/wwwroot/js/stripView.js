@@ -1,3 +1,5 @@
+import { t } from './i18n.js';
+
 // Canvas strip view — the paged light table (port of lazarus/uStripView.pas).
 //
 // Geometry: every strip is shown turned upright. Along the film (lead → trail) runs
@@ -310,7 +312,7 @@ export class StripView {
       else {
         ctx.fillStyle = this.theme.plateEmpty;
         ctx.fillRect(r.x, r.y, r.w, r.h);
-        if (e.state === 'missing') this.label(r, 'No preview', '#6c727d');
+        if (e.state === 'missing') this.label(r, t('No preview'), '#6c727d');
       }
       if (e.state === 'loading') allLoaded = false;
       // strip boundary + number pill
@@ -509,7 +511,7 @@ export class StripView {
           ctx.setLineDash([8, 4]);
           ctx.beginPath(); ctx.moveTo(r.x1, y); ctx.lineTo(r.x2, y); ctx.stroke();
           ctx.setLineDash([]);
-          this.pill(`${label} ${px}`, r.x1 + 4, side === 'top' ? y + 3 : y - 20, line, '#111', true);
+          this.pill(`${t(label)} ${px}`, r.x1 + 4, side === 'top' ? y + 3 : y - 20, line, '#111', true);
         }
       }
     }
@@ -527,8 +529,8 @@ export class StripView {
       ctx.beginPath(); ctx.moveTo(x, r.y); ctx.lineTo(x, r.y + r.h); ctx.stroke();
       this.pill(text, atEnd ? r.x + r.w - 70 : r.x + 5, r.y + 5, color, '#111', true);
     };
-    mark(this.range.from, false, '#22c55e', 'Detect start');
-    mark(this.range.to, true, '#ef4444', 'Detect end');
+    mark(this.range.from, false, '#22c55e', t('Detect start'));
+    mark(this.range.to, true, '#ef4444', t('Detect end'));
   }
 
   /** "Join close" reach: how far after each selected frame a fragment still gets joined. */
@@ -896,10 +898,10 @@ export class StripView {
     const film = this.screenToFilm(x, y, false);
     if (!film) { this.cb.onHover?.(''); return; }
     const hit = this.hitFrame(x, y);
-    let text = `strip ${film.strip + 1} · line ${film.lead.toLocaleString()} · x ${film.across}`;
+    let text = t('strip {s} · line {l} · x {x}', { s: film.strip + 1, l: film.lead.toLocaleString(), x: film.across });
     if (hit >= 0) {
       const f = this.frames[hit];
-      text += ` · frame ${hit + 1} (${f.trailEdge - f.leadEdge} × ${f.rightEdge - f.leftEdge})`;
+      text += ` · ${t('frame {i}', { i: hit + 1 })} (${f.trailEdge - f.leadEdge} × ${f.rightEdge - f.leftEdge})`;
     }
     this.cb.onHover?.(text);
   }

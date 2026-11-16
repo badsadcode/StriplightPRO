@@ -25,7 +25,14 @@ public sealed class AppController
     private readonly Window _owner;
     private readonly BridgeHost _bridge;
     private readonly IWindowHost _host;
-    private readonly AppSettings _settings = AppSettings.Load();
+    private readonly AppSettings _settings = LoadSettings();
+
+    private static AppSettings LoadSettings()
+    {
+        var s = AppSettings.Load();
+        Loc.Load(s.Language);
+        return s;
+    }
     private readonly List<List<FrameRecord>> _undo = [];
 
     private Project _project = new();
@@ -108,6 +115,23 @@ public sealed class AppController
             string idf = await Task.Run(() => DemoRoll.Create(DemoFolder));
             _dirty = false;
             return OpenProject(idf);
+        });
+        // ---- language
+        _bridge.On("i18n.get", _ => new { lang = Loc.Language, dict = Loc.Dictionary });
+        _bridge.On("app.setLanguage", args =>
+        {
+            string lang = BridgeHost.Arg(args, "lang", "en");
+            Loc.Load(lang);
+            _settings.Language = Loc.Language;
+            _settings.Save();
+            _bridge.Emit("lang.changed", new { lang = Loc.Language });   // both windows reload
+            return null;
+        });
+        _bridge.On("i18n.openFolder", _ =>
+        {
+            string folder = Loc.PrepareUserFolder();
+            Shell.OpenFolder(folder);
+            return folder;
         });
         _bridge.On("app.init", _ => new
         {
@@ -260,13 +284,13 @@ public sealed class AppController
         _bridge.On("frames.section", args =>
         {
             var (start, end) = FrameRepair.Section(_project.Frames, BridgeHost.Arg(args, "index", -1), BridgeHost.Arg(args, "includeSuggested", true));
-            if (start < 0) throw new BridgeException("No folder marker before this frame.");
+            if (start < 0) throw new BridgeException(Loc.T("No folder marker before this frame."));
             return new { start, end };
         });
         _bridge.On("frames.deleteSection", args =>
         {
             var (start, end) = FrameRepair.Section(_project.Frames, BridgeHost.Arg(args, "index", -1), includeSuggested: false);
-            if (start < 0) throw new BridgeException("No yellow marker found before this frame.");
+            if (start < 0) throw new BridgeException(Loc.T("No yellow marker found before this frame."));
             PushUndo();
             int count = end - start + 1;
             _project.Frames.RemoveRange(start, count);
@@ -337,7 +361,7 @@ public sealed class AppController
 
         _bridge.On("frames.undo", args =>
         {
-            if (_undo.Count == 0) throw new BridgeException("Nothing to undo.");
+            if (_undo.Count == 0) throw new BridgeException(Loc.T("Nothing to undo."));
             _project.Frames = _undo[^1];
             _undo.RemoveAt(_undo.Count - 1);
             FrameEditor.Refresh(_project.Frames);
@@ -446,7 +470,7 @@ public sealed class AppController
 
         _bridge.On("dialog.pickFolder", args =>
         {
-            var dlg = new OpenFolderDialog { Title = "Choose output folder" };
+            var dlg = new OpenFolderDialog { Title = Loc.T("Choose output folder") };
             string initial = BridgeHost.Arg(args, "initial", "");
             if (Directory.Exists(initial)) dlg.InitialDirectory = initial;
             return dlg.ShowDialog(_owner) == true ? dlg.FolderName : null;
@@ -558,15 +582,15 @@ public sealed class AppController
         {
             var dlg = new OpenFileDialog
             {
-                Title = "Open roll",
-                Filter = "Striplight rolls (*.slf;*.idf;*.qpf)|*.slf;*.idf;*.qpf|Striplight project (*.slf)|*.slf|" +
-                         "QuantumScan roll (*.idf)|*.idf|QuantumScan project (*.qpf)|*.qpf|All files (*.*)|*.*",
+                Title = Loc.T("Open roll"),
+                Filter = Loc.T("Striplight rolls") + " (*.slf;*.idf;*.qpf)|*.slf;*.idf;*.qpf|" + Loc.T("Striplight project") + " (*.slf)|*.slf|" +
+                         Loc.T("QuantumScan roll") + " (*.idf)|*.idf|" + Loc.T("QuantumScan project") + " (*.qpf)|*.qpf|" + Loc.T("All files") + " (*.*)|*.*",
             };
             if (Directory.Exists(_settings.LastFolder)) dlg.InitialDirectory = _settings.LastFolder;
             if (dlg.ShowDialog(_owner) != true) return null;
             path = dlg.FileName;
         }
-        if (!File.Exists(path)) throw new BridgeException("File not found: " + path);
+        if (!File.Exists(path)) throw new BridgeException(Loc.T("File not found: {path}", ("path", path)));
 
         string ext = Path.GetExtension(path).ToLowerInvariant();
         Project project;
@@ -579,7 +603,7 @@ public sealed class AppController
             if (File.Exists(slf) && ProjectFile.TryLoadProject(slf, out project))
             {
                 projectPath = slf;
-                _bridge.Emit("toast", $"Opened the saved project {Path.GetFileName(slf)} for this roll.");
+                _bridge.Emit("toast", Loc.T("Opened the saved project {file} for this roll.", ("file", Path.GetFileName(slf))));
             }
             else
             {
@@ -591,7 +615,7 @@ public sealed class AppController
         else
         {
             if (!ProjectFile.TryLoadProject(path, out project))
-                throw new BridgeException("Could not read the project file " + Path.GetFileName(path) + ".");
+                throw new BridgeException(Loc.T("Could not read the project file {file}.", ("file", Path.GetFileName(path))));
             if (ext == ".slf") projectPath = path;
             idfPath = File.Exists(project.SourceIdfPath) ? project.SourceIdfPath : "";
         }
@@ -652,7 +676,7 @@ public sealed class AppController
 
     private object? Save(bool saveAs)
     {
-        if (!_project.Roll.Loaded) throw new BridgeException("Open a roll first.");
+        if (!_project.Roll.Loaded) throw new BridgeException(Loc.T("Open a roll first."));
         string target = _projectPath;
         if (saveAs || target == "")
         {
@@ -661,8 +685,8 @@ public sealed class AppController
                 : Path.Combine(_project.Roll.BasePath, _project.Roll.RollName + ".slf");
             var dlg = new SaveFileDialog
             {
-                Title = "Save roll project",
-                Filter = "Striplight project (*.slf)|*.slf|QuantumScan project (*.qpf)|*.qpf",
+                Title = Loc.T("Save roll project"),
+                Filter = Loc.T("Striplight project") + " (*.slf)|*.slf|" + Loc.T("QuantumScan project") + " (*.qpf)|*.qpf",
                 FileName = Path.GetFileName(suggested),
                 InitialDirectory = Path.GetDirectoryName(suggested) ?? "",
                 AddExtension = true,
@@ -677,7 +701,7 @@ public sealed class AppController
         {
             // QPF is QuantumScan's format: no notes, no Striplight-only fields. The project stays unsaved as SLF.
             ProjectFile.SaveQpf(target, sourceIdf, _project);
-            _bridge.Emit("toast", $"Exported QuantumScan project {Path.GetFileName(target)}.");
+            _bridge.Emit("toast", Loc.T("Exported QuantumScan project {file}.", ("file", Path.GetFileName(target))));
             return new { path = target, dirty = _dirty };
         }
 
@@ -704,7 +728,7 @@ public sealed class AppController
     {
         if (!_dirty || !_project.Roll.Loaded) return true;
         var answer = MessageBox.Show(_owner,
-            $"The roll \"{_project.Roll.RollName}\" has unsaved changes.\n\nSave them before {action}?",
+            Loc.T("The roll \"{roll}\" has unsaved changes.\n\nSave them before {action}?", ("roll", _project.Roll.RollName), ("action", Loc.T(action))),
             "Striplight PRO", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
         if (answer == MessageBoxResult.Cancel) return false;
         if (answer == MessageBoxResult.Yes)
@@ -712,7 +736,7 @@ public sealed class AppController
             try { return Save(saveAs: false) is not null; }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
-                MessageBox.Show(_owner, "Saving failed: " + e.Message, "Striplight PRO", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(_owner, Loc.T("Saving failed: {error}", ("error", e.Message)), "Striplight PRO", MessageBoxButton.OK, MessageBoxImage.Error);
                 return false;
             }
         }
@@ -731,8 +755,8 @@ public sealed class AppController
     private async Task<object?> RunDetectionAsync(DetectDto d)
     {
         var roll = _project.Roll;
-        if (!roll.Loaded) throw new BridgeException("Open a roll first.");
-        if (_detectCts is not null) throw new BridgeException("Detection is already running.");
+        if (!roll.Loaded) throw new BridgeException(Loc.T("Open a roll first."));
+        if (_detectCts is not null) throw new BridgeException(Loc.T("Detection is already running."));
 
         int to = d.StripTo < 0 ? roll.StripCount - 1 : d.StripTo;
         var tone = _process;
@@ -838,12 +862,12 @@ public sealed class AppController
     /// <summary>"Prepare folders" (Lazarus): creates every output folder of the export before running it.</summary>
     private object PrepareFolders(ExportDto dto)
     {
-        if (!_project.Roll.Loaded || _project.Frames.Count == 0) throw new BridgeException("There are no frames to export.");
+        if (!_project.Roll.Loaded || _project.Frames.Count == 0) throw new BridgeException(Loc.T("There are no frames to export."));
         var naming = dto.ToNaming(ExportNaming.DefaultOutputRoot(ProjectRootPath, _project.Roll));
         IEnumerable<int> indices = dto.Scope == "selected" ? dto.Indices : Enumerable.Range(0, _project.Frames.Count);
         List<ExportJob> jobs;
         try { jobs = ExportEngine.BuildJobs(_project.Frames, indices, naming); }
-        catch (InvalidOperationException e) { throw new BridgeException("Export path error: " + e.Message); }
+        catch (InvalidOperationException e) { throw new BridgeException(Loc.T("Export path error: {error}", ("error", e.Message))); }
         var folders = jobs.Select(j => j.FolderPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         foreach (var f in folders) Directory.CreateDirectory(f);
         return new { created = folders.Count, root = naming.OutputRoot };
@@ -852,10 +876,10 @@ public sealed class AppController
     private object StartExport(ExportDto dto)
     {
         var roll = _project.Roll;
-        if (!roll.Loaded) throw new BridgeException("Open a roll first.");
-        if (_exportCts is not null) throw new BridgeException("An export is already running.");
+        if (!roll.Loaded) throw new BridgeException(Loc.T("Open a roll first."));
+        if (_exportCts is not null) throw new BridgeException(Loc.T("An export is already running."));
         if (!TurboJpeg.IsAvailable) throw new BridgeException(TurboJpeg.Status);
-        if (_project.Frames.Count == 0) throw new BridgeException("There are no frames to export.");
+        if (_project.Frames.Count == 0) throw new BridgeException(Loc.T("There are no frames to export."));
 
         _export = dto;
         StoreExportToRollAndSettings();
@@ -865,8 +889,8 @@ public sealed class AppController
         IEnumerable<int> indices = dto.Scope == "selected" ? dto.Indices : Enumerable.Range(0, _project.Frames.Count);
         List<ExportJob> jobs;
         try { jobs = ExportEngine.BuildJobs(_project.Frames, indices, naming); }
-        catch (InvalidOperationException e) { throw new BridgeException("Export path error: " + e.Message); }
-        if (jobs.Count == 0) throw new BridgeException("No frames selected for export.");
+        catch (InvalidOperationException e) { throw new BridgeException(Loc.T("Export path error: {error}", ("error", e.Message))); }
+        if (jobs.Count == 0) throw new BridgeException(Loc.T("No frames selected for export."));
 
         foreach (var f in _project.Frames) f.IsExported = false;
         var process = _process.ToProcessSettings(_settings.RotateCw);

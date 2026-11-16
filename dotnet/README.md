@@ -155,6 +155,16 @@ Defaults (same keys as the Lazarus edition):
 
 Preview window: X / C (or ← / →) previous / next frame by the step, G / F folder markers, R / Shift+R rotate ±90°, M mirror, N negative, A marker, wheel zoom around the cursor, drag to pan, double-click or 0 / 1 for fit / 1:1, Q full quality, T always on top, I show / hide the target banner (folder number, target folder, file name), Esc close.
 
+## Languages
+
+English (default) and Polish. Switch with the **EN / PL** button in the app bar; both windows reload in the new language and the open roll stays as it is.
+
+- The English text is the key: `wwwroot/i18n/pl.json` maps it to Polish. Anything missing stays English. Counts use plural objects (`{ "one", "few", "many", "other" }`, chosen with `Intl.PluralRules`), e.g. 1 klatka / 2 klatki / 5 klatek.
+- Your own corrections: *Language → Edit translations* copies `pl.json` to `%APPDATA%\StriplightPRO\lang\` and opens the folder. Entries there override the built-in file and survive updates (switch the language again to reload).
+- Page side: `wwwroot/js/i18n.js` (`t()`, `tn()`, start-up translation of the static HTML). Host side: `Services/Loc.cs` (`Loc.T()` for dialogs and error messages); both use the same dictionary.
+- After changing UI text run `python dotnet/tools/i18n_check.py`: it lists strings missing from (or no longer used in) `pl.json`.
+- Terms used in Polish: frame = *klatka*, marker = *znacznik*, strip = *pasek*, roll = *rolka*.
+
 ## Interface
 
 The window has a dark native title bar, an app bar (roll name, Open / Save as / Save, shortcuts), a tool rail on the left (Frames, Detect, Adjust, Export, Notes), the strip view in the middle and an inspector on the right showing the panel for the selected tool. Over the strip view sit a floating toolbar (pages, zoom, strips per row, CW orientation) and, at the bottom, the legend and a roll scrubber. The scrubber marks folder markers, odd-size frames, the selection and exported frames along the whole roll, highlights the visible page, and jumps when you click or drag.

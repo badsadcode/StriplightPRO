@@ -13,7 +13,7 @@
   <header class="appbar">
     <div class="brand">
       <span class="logo" aria-hidden="true"></span>
-      <span class="brand-text">Striplight <span class="pro">PRO</span></span>
+      <span class="brand-text" data-no-i18n>Striplight <span class="pro">PRO</span></span>
     </div>
     <span class="appbar-sep" aria-hidden="true"></span>
     <div class="roll" id="roll-title">
@@ -28,6 +28,7 @@
       <button class="btn btn-primary" data-cmd="save" data-needs-roll title="Save project (Ctrl+S)"><i data-icon="save"></i><span>Save</span></button>
       <button class="icon-btn theme-toggle" data-cmd="theme" title="Switch light / dark theme" aria-label="Switch theme"><span class="icon-moon"><i data-icon="moon" data-size="18"></i></span><span class="icon-sun"><i data-icon="sun" data-size="18"></i></span></button>
       <button class="icon-btn" data-cmd="shortcuts" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><i data-icon="keyboard" data-size="18"></i></button>
+      <button class="btn btn-ghost lang-btn" data-cmd="langMenu" title="Language" aria-label="Language"><span id="lang-code">EN</span></button>
     </div>
   </header>
 
@@ -84,13 +85,13 @@
       <div class="welcome" id="empty-state">
         <div class="welcome-card">
           <div class="welcome-logo" aria-hidden="true"></div>
-          <h1>Striplight <span class="pro">PRO</span></h1>
+          <h1 data-no-i18n>Striplight <span class="pro">PRO</span></h1>
           <p>Review microfilm strips, fix frame boundaries and export clean page images.</p>
           <div class="welcome-actions">
             <button class="btn btn-primary btn-lg" data-cmd="open"><i data-icon="folder-open" data-size="18"></i>Open roll…<kbd>Ctrl O</kbd></button>
             <button class="btn btn-lg" data-cmd="demo"><i data-icon="sparkles" data-size="18"></i>Try the demo roll</button>
           </div>
-          <p class="welcome-formats">Reads QuantumScan <code>.idf</code> and <code>.qpf</code>, and Striplight <code>.slf</code> projects.</p>
+          <p class="welcome-formats" data-i18n-html>Reads QuantumScan <code>.idf</code> and <code>.qpf</code>, and Striplight <code>.slf</code> projects.</p>
           <div class="recent-wrap" id="recent-wrap" hidden>
             <h2><i data-icon="history"></i>Recent</h2>
             <ul class="recent" id="recent-list"></ul>
@@ -370,7 +371,7 @@
             <label class="field">File prefix<input type="text" id="exp-prefix" placeholder="none"></label>
             <label class="switch" style="align-self:end;padding-bottom:7px"><input type="checkbox" id="exp-sep" checked><span></span>Folder per marker</label>
           </div>
-          <label class="field" id="exp-archive-wrap" hidden>Archive list <small>parts separated by <code>;</code> become folders and the file name</small>
+          <label class="field" id="exp-archive-wrap" hidden>Archive list <small data-i18n-html>parts separated by <code>;</code> become folders and the file name</small>
             <textarea id="exp-archive" rows="6" spellcheck="false" placeholder="Box 1;Folder A&#10;Box 1;Folder B"></textarea>
           </label>
           <div class="path-preview" id="exp-example"></div>
@@ -433,6 +434,13 @@
       </footer>
     </div>
   </div>
+
+  <menu class="context-menu app-menu" id="lang-menu" hidden>
+    <li><button data-cmd="langEn" data-no-i18n>English</button></li>
+    <li><button data-cmd="langPl" data-no-i18n>Polski</button></li>
+    <li class="sep"></li>
+    <li><button data-cmd="langFolder">Edit translations (opens the folder)…</button></li>
+  </menu>
 
   <div class="toast-host" id="toast-host" aria-live="polite"></div>
 

@@ -9,6 +9,7 @@ import { hydrateIcons, icon } from './icons.js';
 import { initSegmented, initRanges, paintRange } from './ui.js';
 import { Scrubber } from './scrubber.js';
 import { COMMANDS, Keymap, comboFromEvent, keyLabel } from './keymap.js';
+import { t, tn, initI18n, currentLanguage } from './i18n.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -127,7 +128,7 @@ function applySession(s) {
   $('#empty-state').hidden = true;
   $('#viewbar').hidden = false;
   $('#viewer-foot').hidden = false;
-  $('.roll-name').textContent = s.roll.rollName || 'Untitled roll';
+  $('.roll-name').textContent = s.roll.rollName || t('Untitled roll');
   $('.roll-name').title = s.projectPath || s.idfPath || '';
   $('#roll-meta').hidden = false;
   refreshRollMeta();
@@ -153,14 +154,14 @@ function applySession(s) {
   refreshPager();
   refreshEnabled();
   scrubber.invalidate();
-  status(`Opened ${fileName(s.projectPath || s.idfPath)}`);
+  status(t('Opened {file}', { file: fileName(s.projectPath || s.idfPath) }));
   $('#strip-canvas').focus();
 }
 
 function refreshRollMeta() {
   if (!state.session) return;
   const r = state.session.roll;
-  $('#roll-meta').textContent = `${r.stripCount.toLocaleString()} strips · ${view.frames.length.toLocaleString()} frames`;
+  $('#roll-meta').textContent = `${tn(r.stripCount, '{n} strip', '{n} strips')} · ${tn(view.frames.length, '{n} frame', '{n} frames')}`;
 }
 
 async function openProject(path = '') {
@@ -169,11 +170,11 @@ async function openProject(path = '') {
 }
 
 async function openDemo() {
-  status('Preparing the demo roll…');
+  status(t('Preparing the demo roll…'));
   const s = await run('project.demo');
   if (s) {
     applySession(s);
-    toast('Demo roll opened. Try Detect, Adjust and Export, or drag frames around.', 'ok');
+    toast(t('Demo roll opened. Try Detect, Adjust and Export, or drag frames around.'), 'ok');
   }
 }
 
@@ -187,7 +188,7 @@ async function save(as = false) {
     setDirty(false);
     state.session.projectPath = r.path;
     $('.roll-name').title = r.path;
-    toast(`Saved ${fileName(r.path)}`, 'ok');
+    toast(t('Saved {file}', { file: fileName(r.path) }), 'ok');
   }
 }
 
@@ -270,7 +271,7 @@ async function undo() {
   const r = await call('frames.undo').catch((e) => { toast(e.message); return null; });
   if (!r) return;
   applyFrames(r.frames, []);
-  status(`Undone · ${r.remaining} more step${r.remaining === 1 ? '' : 's'} available`);
+  status(tn(r.remaining, 'Undone · {n} more step available', 'Undone · {n} more steps available'));
 }
 
 /** F / G: jump to the next / previous folder marker (wraps around, like Lazarus). */
@@ -289,16 +290,16 @@ function jumpMarker(forward) {
     const i = (((forward ? from + k : from - k) % n) + n) % n;
     if (frames[i].isMarker) { view.select(i); view.revealFrame(i); return; }
   }
-  toast('No folder markers on this roll.');
+  toast(t('No folder markers on this roll.'));
 }
 
 async function deleteSelected(askConfirm = true) {
   const n = view.selected.size;
   if (!n) return;
-  if (askConfirm && n > 20 && !confirm(`Delete ${n} frames?`)) return;
+  if (askConfirm && n > 20 && !confirm(tn(n, 'Delete {n} frame?', 'Delete {n} frames?'))) return;
   const r = await run('frames.delete', { indices: selection() });
   applyFrames(r, []);
-  status(`Deleted ${n} frame${n === 1 ? '' : 's'}`);
+  status(tn(n, 'Deleted {n} frame', 'Deleted {n} frames'));
 }
 
 function nextAbnormal() {
@@ -313,7 +314,7 @@ function nextAbnormal() {
       return;
     }
   }
-  toast('No odd-size frames on this roll.');
+  toast(t('No odd-size frames on this roll.'));
 }
 
 function refreshFramesPanel() {
@@ -329,22 +330,22 @@ function refreshFramesPanel() {
   if (sel.length !== 1) { card.hidden = true; return; }
   const i = sel[0], f = frames[i], ll = state.session.roll.lengthLines;
   const rows = [
-    ['Lead → trail', `${f.leadEdge.toLocaleString()} → ${f.trailEdge.toLocaleString()}`],
-    ['Strips', `${Math.floor(f.leadEdge / ll) + 1} – ${Math.floor(f.trailEdge / ll) + 1}`],
-    ['Left → right', `${f.leftEdge} → ${f.rightEdge}`],
-    ['Size', `${f.trailEdge - f.leadEdge} × ${f.rightEdge - f.leftEdge} px`],
+    [t('Lead → trail'), `${f.leadEdge.toLocaleString()} → ${f.trailEdge.toLocaleString()}`],
+    [t('Strips'), `${Math.floor(f.leadEdge / ll) + 1} – ${Math.floor(f.trailEdge / ll) + 1}`],
+    [t('Left → right'), `${f.leftEdge} → ${f.rightEdge}`],
+    [t('Size'), `${f.trailEdge - f.leadEdge} × ${f.rightEdge - f.leftEdge} px`],
   ];
-  if (f.customToneMethod >= 0) rows.push(['Own tone', `${state.toneMethods?.[f.customToneMethod] ?? 'method ' + f.customToneMethod} · C ${f.customContrast} · B ${f.customBrightness} · G ${f.customGamma}`]);
-  if (f.hasOverride) rows.push(['Orientation', `${f.rotation}°${f.flipH ? ' · mirrored' : ''}${f.negative ? ' · negative' : ''}`]);
-  if (hasTone(f)) rows.push(['Tone', 'own values (from file)']);
+  if (f.customToneMethod >= 0) rows.push([t('Own tone'), `${t(state.toneMethods?.[f.customToneMethod] ?? String(f.customToneMethod))} · C ${f.customContrast} · B ${f.customBrightness} · G ${f.customGamma}`]);
+  if (f.hasOverride) rows.push([t('Orientation'), `${f.rotation}°${f.flipH ? ' · ' + t('mirrored') : ''}${f.negative ? ' · ' + t('negative') : ''}`]);
+  if (hasTone(f) && f.customToneMethod < 0) rows.push([t('Tone'), t('own values (from file)')]);
   card.replaceChildren();
   const title = document.createElement('div');
   title.className = 'fc-title';
-  title.textContent = `Frame ${i + 1} of ${frames.length}`;
+  title.textContent = t('Frame {i} of {n}', { i: (i + 1).toLocaleString(), n: frames.length.toLocaleString() });
   if (f.isMarker) {
     const chip = document.createElement('span');
     chip.className = 'chip chip-warn';
-    chip.textContent = 'Folder start';
+    chip.textContent = t('Folder start');
     title.append(chip);
   }
   card.append(title);
@@ -421,14 +422,14 @@ function expandSelected() {
 /** Trim: the yellow bands are measured from the screen top / bottom of a strip. */
 async function applyTrim() {
   const top = Number($('#trim-top').value) || 0, bottom = Number($('#trim-bottom').value) || 0;
-  if (!top && !bottom) { toast('Set the trim lines first (Top / Bottom).'); return; }
-  if (!confirm(`Clip all ${view.frames.length} frames to the trim lines?\nOnly frames that reach into the yellow bands change.`)) return;
+  if (!top && !bottom) { toast(t('Set the trim lines first (Top / Bottom).')); return; }
+  if (!confirm(t('Clip all {n} frames to the trim lines?\nOnly frames that reach into the yellow bands change.', { n: view.frames.length.toLocaleString() }))) return;
   const w = W();
   const minLeft = view.rotateCw ? top : bottom;            // stored column 0 is the screen top in CW mode
   const maxRight = view.rotateCw ? (bottom ? w - bottom : 0) : (top ? w - top : 0);
   const r = await run('frames.trim', { minLeft, maxRight });
   applyFrames(r.frames);
-  status(`Trimmed ${r.count} frame${r.count === 1 ? '' : 's'}`);
+  status(tn(r.count, 'Trimmed {n} frame', 'Trimmed {n} frames'));
   $('#trim-top').value = $('#trim-bottom').value = 0;   // like Lazarus: lines reset after apply
   view.trim.top = view.trim.bottom = 0;
   view.invalidate();
@@ -441,15 +442,15 @@ async function selectSection(idx) {
   view.setFrames(view.frames, ids);
   refreshFramesPanel();
   scrubber.invalidate();
-  status(`Selected folder section: frames ${r.start + 1}–${r.end + 1}`);
+  status(t('Selected folder section: frames {a}–{b}', { a: r.start + 1, b: r.end + 1 }));
 }
 
 async function deleteSection(idx) {
   const r0 = await run('frames.section', { index: idx, includeSuggested: false });
-  if (!confirm(`Delete frames ${r0.start + 1}–${r0.end + 1} (${r0.end - r0.start + 1} frames, from the folder marker to the next one)?`)) return;
+  if (!confirm(t('Delete frames {a}–{b} ({n} frames, from the folder marker to the next one)?', { a: r0.start + 1, b: r0.end + 1, n: r0.end - r0.start + 1 }))) return;
   const r = await run('frames.deleteSection', { index: idx });
   applyFrames(r.frames, []);
-  status(`Deleted ${r.count} frames`);
+  status(tn(r.count, 'Deleted {n} frame', 'Deleted {n} frames'));
 }
 
 async function clearExported(indices) {
@@ -462,7 +463,7 @@ function setDetectRange(which, strip) {
   $('#det-scope').value = 'range';
   refreshOverlays();
   showTab('detect');
-  toast(`Detection ${which === 'from' ? 'starts' : 'ends'} at strip ${strip + 1}`);
+  toast(t(which === 'from' ? 'Detection starts at strip {n}' : 'Detection ends at strip {n}', { n: strip + 1 }));
 }
 
 /** Pushes the panel values into the strip-view overlays. */
@@ -473,7 +474,7 @@ function refreshOverlays() {
   view.area = { show: $('#det-area').checked, top: num('#det-left'), bottom: num('#det-right') };
   const from = Math.max(0, num('#det-from') - 1), to = Math.max(0, num('#det-to') - 1);
   view.range = { show: $('#det-scope').value === 'range', from, to };
-  $('#det-run').lastChild.textContent = view.range.show ? `Detect strips ${from + 1}–${to + 1}` : 'Detect whole roll';
+  $('#det-run').lastChild.textContent = view.range.show ? t('Detect strips {a}–{b}', { a: from + 1, b: to + 1 }) : t('Detect whole roll');
   view.join = { show: $('#join-show').checked, gap: num('#join-gap') };
   view.invalidate();
 }
@@ -495,19 +496,21 @@ $('#det-scope').addEventListener('change', refreshOverlays);
 const anchor = () => (view.selected.size === 1 ? [...view.selected][0] : -1);
 
 async function suggest(direction = 0) {
-  if (direction && anchor() < 0) { toast('Select exactly one frame as the anchor.'); return; }
+  if (direction && anchor() < 0) { toast(t('Select exactly one frame as the anchor.')); return; }
   const r = await run('markers.suggest', {
     strictness: Number($('#sug-num').value) || 50, beforeGap: $('#sug-before').checked, direction, anchor: anchor(),
   });
   applyFrames(r.frames);
-  const where = direction < 0 ? ' toward start' : direction > 0 ? ' toward end' : '';
-  $('#sug-status').textContent = `Suggested ${r.suggested.toLocaleString()} markers${where} · gap threshold ${r.threshold.toLocaleString()} px`;
+  const what = direction < 0 ? tn(r.suggested, 'Suggested {n} marker toward start', 'Suggested {n} markers toward start')
+    : direction > 0 ? tn(r.suggested, 'Suggested {n} marker toward end', 'Suggested {n} markers toward end')
+      : tn(r.suggested, 'Suggested {n} marker', 'Suggested {n} markers');
+  $('#sug-status').textContent = `${what} · ${t('gap threshold {px} px', { px: r.threshold.toLocaleString() })}`;
 }
 
 async function markerTool(cmd, args, label) {
   const r = await run(cmd, args);
   applyFrames(r.frames);
-  $('#sug-status').textContent = `${label}: ${r.count.toLocaleString()}`;
+  $('#sug-status').textContent = `${t(label)}: ${r.count.toLocaleString()}`;
 }
 
 function setStrictness(v) {
@@ -532,7 +535,7 @@ $('#split-parts').addEventListener('input', refreshSplitPreview);
 $('#multi-edit').addEventListener('change', (e) => {
   view.multiEdit = e.target.checked;
   view.invalidate();
-  status(view.multiEdit ? 'Multi-edit on: dragging an edge resizes all selected frames' : 'Multi-edit off');
+  status(view.multiEdit ? t('Multi-edit on: dragging an edge resizes all selected frames') : t('Multi-edit off'));
   sendView();
 });
 $('#strip-numbers').addEventListener('change', (e) => {
@@ -576,8 +579,8 @@ function applyRanges(method, resetValues) {
   }
   slider('strength').hidden = !isAdaptive(method);
   $('#tone-hint').textContent = isAdaptive(method)
-    ? 'Adaptive methods analyse each frame on export. The strips show a per-strip approximation, so use Preview (Enter) for the exact result. The sliders apply after the adaptive step.'
-    : isQuantum(method) ? 'Quantum ranges: contrast 64 and gamma 0 are neutral.' : '';
+    ? t('Adaptive methods analyse each frame on export. The strips show a per-strip approximation, so use Preview (Enter) for the exact result. The sliders apply after the adaptive step.')
+    : isQuantum(method) ? t('Quantum ranges: contrast 64 and gamma 0 are neutral.') : '';
 }
 
 function loadProcess(p) {
@@ -671,14 +674,14 @@ async function setToneTarget(t) {
 
 function refreshToneTarget() {
   const n = view.selected.size, own = view.frames.filter(hasTone).length, sel = toneTarget === 'sel';
-  $('#tone-target-sel').textContent = n ? `Selected frames (${n.toLocaleString()})` : 'Selected frames';
+  $('#tone-target-sel').textContent = n ? `${t('Selected frames')} (${n.toLocaleString()})` : t('Selected frames');
   $('#tone-target-sel').disabled = !n;
-  $('#tone-title').textContent = sel ? 'Tone · selected frames' : 'Tone · all frames';
+  $('#tone-title').textContent = sel ? t('Tone · selected frames') : t('Tone · all frames');
   $('[data-panel=process]').classList.toggle('tone-sel', sel);
   $('#tone-own').textContent = sel
-    ? 'Changes here give the selected frames their own tone. Changing the global tone later leaves them as they are.'
-    : own ? `${own.toLocaleString()} frame${own === 1 ? ' has its' : 's have their'} own tone; global changes don't affect ${own === 1 ? 'it' : 'them'}.`
-      : 'Select frames and choose "Selected frames" to give them their own tone.';
+    ? t('Changes here give the selected frames their own tone. Changing the global tone later leaves them as they are.')
+    : own ? tn(own, "{n} frame has its own tone; global changes don't affect it.", "{n} frames have their own tone; global changes don't affect them.")
+      : t('Select frames and choose "Selected frames" to give them their own tone.');
 }
 
 const sendFrameTone = debounce(async () => {
@@ -762,13 +765,13 @@ async function detect() {
   refreshEnabled();
   startLiveDetect(args.stripFrom, args.stripTo);
   setBar('#det-bar', 0, 1);
-  $('#det-status').textContent = wholeRoll ? 'Starting · whole roll…' : `Starting · strips ${args.stripFrom + 1}–${args.stripTo + 1}…`;
+  $('#det-status').textContent = wholeRoll ? t('Starting · whole roll…') : t('Starting · strips {a}–{b}…', { a: args.stripFrom + 1, b: args.stripTo + 1 });
   try {
     const r = await call('detect.run', args);
     applyFrames(r.frames, []);
-    const msg = r.found < 0 ? 'Detection cancelled'
-      : `Found ${r.found.toLocaleString()} frames · ${r.read.toLocaleString()} previews read` +
-        (r.missing ? ` · ${r.missing.toLocaleString()} missing in ${r.previewFolder}` : '');
+    const msg = r.found < 0 ? t('Detection cancelled')
+      : `${tn(r.found, 'Found {n} frame', 'Found {n} frames')} · ${tn(r.read, '{n} preview read', '{n} previews read')}` +
+        (r.missing ? ` · ${t('{n} missing in {folder}', { n: r.missing.toLocaleString(), folder: r.previewFolder })}` : '');
     $('#det-status').textContent = msg;
     setBar('#det-bar', 1, 1);
     status(msg);
@@ -815,8 +818,8 @@ on('detect.progress', (p) => {
   showLiveDetect(p);
   setBar('#det-bar', p.currentStrip, p.totalStrips);
   $('#det-status').textContent =
-    `Strip ${p.currentStrip.toLocaleString()} of ${p.totalStrips.toLocaleString()} · ${p.framesFound.toLocaleString()} frames` +
-    (p.stripsMissing ? ` · ${p.stripsMissing} previews missing` : '');
+    `${t('Strip {i} of {n}', { i: p.currentStrip.toLocaleString(), n: p.totalStrips.toLocaleString() })} · ${tn(p.framesFound, '{n} frame', '{n} frames')}` +
+    (p.stripsMissing ? ` · ${tn(p.stripsMissing, '{n} preview missing', '{n} previews missing')}` : '');
 });
 
 // ------------------------------------------------------------------ export panel
@@ -863,7 +866,7 @@ function gatherExport() {
 function refreshNamingMode() {
   const archive = $('#exp-mode').value === '1';
   const d = Math.max(1, Math.min(12, Number($('#exp-digits').value) || 5));
-  $('#exp-digits-example').textContent = `e.g. ${'1'.padStart(d, '0')}, ${'12'.padStart(d, '0')}`;
+  $('#exp-digits-example').textContent = `${t('e.g.')} ${'1'.padStart(d, '0')}, ${'12'.padStart(d, '0')}`;
   $('#exp-archive-wrap').hidden = !archive;
   $('#exp-quantum').hidden = archive;
 }
@@ -878,8 +881,8 @@ async function updateExportExample() {
   const archive = $('#exp-mode').value === '1';
   const short = archive && r.rows < r.folders;
   el.classList.toggle('error', !!r.error || short);
-  const counts = archive ? `\n${r.folders} folder${r.folders === 1 ? '' : 's'} · ${r.rows} list row${r.rows === 1 ? '' : 's'}${short ? ' (rows missing)' : ''}` : '';
-  el.textContent = (r.error ? r.error : `Frame ${index + 1} → ${r.path}`) + counts;
+  const counts = archive ? `\n${tn(r.folders, '{n} folder', '{n} folders')} · ${tn(r.rows, '{n} list row', '{n} list rows')}${short ? ' ' + t('(rows missing)') : ''}` : '';
+  el.textContent = (r.error ? r.error : `${t('Frame {i}', { i: index + 1 })} → ${r.path}`) + counts;
 }
 
 function flushExportSettings() {
@@ -897,15 +900,15 @@ $$('[data-panel=export] input, [data-panel=export] select, [data-panel=export] t
 async function exportStart() {
   if (!hasRoll() || state.exporting) return;
   const args = gatherExport();
-  if (args.scope === 'selected' && !args.indices.length) { toast('Select frames to export first.', 'error'); return; }
+  if (args.scope === 'selected' && !args.indices.length) { toast(t('Select frames to export first.'), 'error'); return; }
   $('#exp-failures').replaceChildren();
   setBar('#exp-bar', 0, 1);
   try {
     const r = await call('export.start', args);
     state.exporting = true;
     state.exportPaused = false;
-    $('#exp-pause span').textContent = 'Pause';
-    $('#exp-status').textContent = `Exporting ${r.jobs.toLocaleString()} frames to ${r.outputRoot}`;
+    $('#exp-pause span').textContent = t('Pause');
+    $('#exp-status').textContent = tn(r.jobs, 'Exporting {n} frame to {folder}', 'Exporting {n} frames to {folder}', { folder: r.outputRoot });
     view.frames.forEach((f) => { f.isExported = false; });
     view.invalidate();
     refreshEnabled();
@@ -921,8 +924,10 @@ on('export.progress', (p) => {
   exportCounts[p.outcome.toLowerCase()]++;
   setBar('#exp-bar', p.done, p.total);
   $('#exp-status').textContent =
-    `${p.done.toLocaleString()} of ${p.total.toLocaleString()} · ${exportCounts.exported} exported · ` +
-    `${exportCounts.skipped} skipped · ${exportCounts.failed} failed`;
+    t('{done} of {total} · {exported} exported · {skipped} skipped · {failed} failed', {
+      done: p.done.toLocaleString(), total: p.total.toLocaleString(),
+      exported: exportCounts.exported, skipped: exportCounts.skipped, failed: exportCounts.failed,
+    });
   if (p.outcome === 'Exported' && view.frames[p.frameIdx]) {
     view.frames[p.frameIdx].isExported = true;
     view.invalidate();
@@ -934,9 +939,11 @@ on('export.progress', (p) => {
 on('export.done', (d) => {
   state.exporting = false;
   refreshEnabled();
-  const msg = d.fatal ? `Export stopped: ${d.fatal}`
-    : `${d.cancelled ? 'Export stopped' : 'Export finished'}: ${d.exported} exported, ${d.skipped} skipped, ` +
-      `${d.failed} failed in ${d.seconds.toFixed(1)} s`;
+  const msg = d.fatal ? `${t('Export stopped')}: ${d.fatal}`
+    : `${d.cancelled ? t('Export stopped') : t('Export finished')}: ` +
+      t('{exported} exported, {skipped} skipped, {failed} failed in {seconds} s', {
+        exported: d.exported, skipped: d.skipped, failed: d.failed, seconds: d.seconds.toFixed(1),
+      });
   $('#exp-status').textContent = msg;
   toast(msg, d.failed || d.fatal ? 'error' : 'ok');
   status(msg);
@@ -944,8 +951,8 @@ on('export.done', (d) => {
 
 function addFailure(frameIdx, error) {
   const li = document.createElement('li');
-  li.textContent = `Frame ${frameIdx + 1}: ${error}`;
-  li.title = 'Show this frame';
+  li.textContent = `${t('Frame {i}', { i: frameIdx + 1 })}: ${error}`;
+  li.title = t('Show this frame');
   li.addEventListener('click', () => { view.select(frameIdx); view.revealFrame(frameIdx); });
   $('#exp-failures').append(li);
 }
@@ -991,21 +998,21 @@ function showContextMenu(x, y, hit, strip) {
   const m = $('#context-menu');
   const sel = view.selected.size > 0;
   const items = [
-    hit >= 0 && { label: `Frame ${hit + 1}`, head: true },
-    { label: 'Preview frame', key: 'previewFrame', icon: 'eye', on: hit >= 0, run: () => openFrameModal(hit) },
-    { label: 'Toggle folder marker', key: 'toggleMarker', icon: 'flag', on: sel, run: () => frameCommand('frames.toggleMarker') },
-    { label: 'Select folder section', key: 'selectSection', icon: 'grid-2x2', on: hit >= 0, run: () => selectSection(hit) },
-    { label: 'Delete folder section from marker', key: 'deleteSection', icon: 'trash-2', on: hit >= 0, danger: true, run: () => deleteSection(hit) },
+    hit >= 0 && { label: t('Frame {i}', { i: hit + 1 }), head: true },
+    { label: t('Preview frame'), key: 'previewFrame', icon: 'eye', on: hit >= 0, run: () => openFrameModal(hit) },
+    { label: t('Toggle folder marker'), key: 'toggleMarker', icon: 'flag', on: sel, run: () => frameCommand('frames.toggleMarker') },
+    { label: t('Select folder section'), key: 'selectSection', icon: 'grid-2x2', on: hit >= 0, run: () => selectSection(hit) },
+    { label: t('Delete folder section from marker'), key: 'deleteSection', icon: 'trash-2', on: hit >= 0, danger: true, run: () => deleteSection(hit) },
     'sep',
-    { label: 'Clear exported mark', icon: 'x', on: hit >= 0 && view.frames[hit]?.isExported, run: () => clearExported([hit]) },
-    { label: 'Clear exported marks on selected', key: 'clearExportedSel', icon: 'x', on: sel, run: () => clearExported(selection()) },
-    { label: 'Clear all exported marks', icon: 'x', on: true, run: () => clearExported(null) },
+    { label: t('Clear exported mark'), icon: 'x', on: hit >= 0 && view.frames[hit]?.isExported, run: () => clearExported([hit]) },
+    { label: t('Clear exported marks on selected'), key: 'clearExportedSel', icon: 'x', on: sel, run: () => clearExported(selection()) },
+    { label: t('Clear all exported marks'), icon: 'x', on: true, run: () => clearExported(null) },
     'sep',
-    { label: strip >= 0 ? `Set detection start here (strip ${strip + 1})` : 'Set detection start here', icon: 'chevrons-right', on: strip >= 0, run: () => setDetectRange('from', strip) },
-    { label: strip >= 0 ? `Set detection end here (strip ${strip + 1})` : 'Set detection end here', icon: 'chevrons-left', on: strip >= 0, run: () => setDetectRange('to', strip) },
+    { label: strip >= 0 ? t('Set detection start here (strip {n})', { n: strip + 1 }) : t('Set detection start here'), icon: 'chevrons-right', on: strip >= 0, run: () => setDetectRange('from', strip) },
+    { label: strip >= 0 ? t('Set detection end here (strip {n})', { n: strip + 1 }) : t('Set detection end here'), icon: 'chevrons-left', on: strip >= 0, run: () => setDetectRange('to', strip) },
     'sep',
-    { label: 'Clear per-frame settings', icon: 'rotate-ccw', on: sel, run: () => frameCommand('frames.clearOverrides') },
-    { label: 'Delete selected', key: 'deleteSelected', icon: 'trash-2', on: sel, danger: true, run: () => deleteSelected(true) },
+    { label: t('Clear per-frame settings'), icon: 'rotate-ccw', on: sel, run: () => frameCommand('frames.clearOverrides') },
+    { label: t('Delete selected'), key: 'deleteSelected', icon: 'trash-2', on: sel, danger: true, run: () => deleteSelected(true) },
   ].filter(Boolean);
   m.replaceChildren();
   for (const it of items) {
@@ -1066,7 +1073,7 @@ const commands = {
   split: () => view.selected.size && frameTool('frames.split', { parts: Number($('#split-parts').value) || 2 }),
   toggleSuggested: () => {
     const sel = selection();
-    if (sel.length !== 1) { toast('Select exactly one frame to toggle its suggestion.'); return; }
+    if (sel.length !== 1) { toast(t('Select exactly one frame to toggle its suggestion.')); return; }
     return frameCommand('frames.toggleSuggested', { index: sel[0] });
   },
   undo,
@@ -1090,7 +1097,7 @@ const commands = {
   suggestEnd: () => suggest(1),
   selectSuggested: () => {
     const idx = view.frames.map((f, i) => (f.isSuggested ? i : -1)).filter((i) => i >= 0);
-    if (!idx.length) { toast('No suggested folder starts.'); return; }
+    if (!idx.length) { toast(t('No suggested folder starts.')); return; }
     view.setFrames(view.frames, idx);
     refreshFramesPanel();
     scrubber.invalidate();
@@ -1110,7 +1117,7 @@ const commands = {
   previewFrame: () => { const i = selection()[0]; if (i !== undefined) openFrameModal(i); },
   deleteSelected,
   clearMarkers: async () => {
-    if (!confirm('Remove every folder marker on this roll?')) return;
+    if (!confirm(t('Remove every folder marker on this roll?'))) return;
     applyFrames(await run('frames.clearMarkers'));
   },
   applyOverride: () => frameCommand('frames.setOverride', {
@@ -1120,11 +1127,11 @@ const commands = {
   clearTone: async () => {
     await frameCommand('frames.clearTone');
     if (toneTarget === 'sel') loadSelectedTone();
-    toast('Selected frames follow the global tone again');
+    toast(t('Selected frames follow the global tone again'));
   },
   selectOwnTone: () => {
     const idx = view.frames.map((f, i) => (hasTone(f) ? i : -1)).filter((i) => i >= 0);
-    if (!idx.length) { toast('No frames have their own tone.'); return; }
+    if (!idx.length) { toast(t('No frames have their own tone.')); return; }
     view.setFrames(view.frames, idx);
     refreshFramesPanel();
     scrubber.invalidate();
@@ -1137,7 +1144,7 @@ const commands = {
     $('#det-touchl').value = hasRoll() ? Math.floor(state.session.roll.lengthLines / 64) : 64;
     $('#det-auto').checked = $('#det-invert').checked = false;
     saveDetectOptions();
-    toast('Detection settings back to defaults');
+    toast(t('Detection settings back to defaults'));
   },
   toneReset: () => {
     const m = Number($('#tone-method').value);
@@ -1154,15 +1161,30 @@ const commands = {
   exportStart,
   prepareFolders: async () => {
     const r = await run('export.prepareFolders', gatherExport());
-    toast(`Created ${r.created} folder${r.created === 1 ? '' : 's'} in ${r.root}`, 'ok');
+    toast(tn(r.created, 'Created {n} folder in {folder}', 'Created {n} folders in {folder}', { folder: r.root }), 'ok');
   },
   exportPause: async () => {
     state.exportPaused = !state.exportPaused;
     await call(state.exportPaused ? 'export.pause' : 'export.resume');
-    $('#exp-pause span').textContent = state.exportPaused ? 'Resume' : 'Pause';
+    $('#exp-pause span').textContent = state.exportPaused ? t('Resume') : t('Pause');
   },
   exportStop: () => call('export.cancel'),
   shortcuts: () => { renderKeysEditor(); $('#shortcuts-modal').hidden = false; },
+  langMenu: () => {
+    const m = $('#lang-menu');
+    if (!m.hidden) { m.hidden = true; return; }
+    const r = $('[data-cmd=langMenu]').getBoundingClientRect();
+    m.hidden = false;
+    m.style.top = `${r.bottom + 4}px`;
+    m.style.left = `${Math.max(8, r.right - m.offsetWidth)}px`;
+  },
+  langEn: () => setLanguage('en'),
+  langPl: () => setLanguage('pl'),
+  langFolder: async () => {
+    $('#lang-menu').hidden = true;
+    const folder = await run('i18n.openFolder');
+    if (folder) toast(t('Edit pl.json in {folder}, then switch the language again (or restart) to see your changes.', { folder }), 'ok');
+  },
   shortcutsClose: () => { $('#shortcuts-modal').hidden = true; },
 };
 
@@ -1191,7 +1213,7 @@ function renderKeysEditor() {
   for (const c of COMMANDS) {
     if (c.section !== lastSection) {
       const h = document.createElement('h4');
-      h.textContent = c.section;
+      h.textContent = t(c.section);
       box.append(h);
       lastSection = c.section;
     }
@@ -1199,7 +1221,7 @@ function renderKeysEditor() {
     row.className = 'key-row';
     const label = document.createElement('span');
     label.className = 'key-label';
-    label.textContent = c.label;
+    label.textContent = t(c.label);
     const chips = document.createElement('span');
     chips.className = 'key-chips';
     for (const k of keymap.keysFor(c.id)) {
@@ -1208,14 +1230,14 @@ function renderKeysEditor() {
       chip.textContent = keyLabel(k);
       const x = document.createElement('button');
       x.textContent = '×';
-      x.title = 'Remove this key';
+      x.title = t('Remove this key');
       x.addEventListener('click', () => { keymap.unbind(c.id, k); saveKeymap(); renderKeysEditor(); });
       chip.append(x);
       chips.append(chip);
     }
     const add = document.createElement('button');
     add.className = 'key-add' + (capturing === c.id ? ' capturing' : '');
-    add.textContent = capturing === c.id ? 'Press a key… (Esc cancels)' : '+';
+    add.textContent = capturing === c.id ? t('Press a key… (Esc cancels)') : '+';
     add.addEventListener('click', () => { capturing = c.id; renderKeysEditor(); });
     chips.append(add);
     row.append(label, chips);
@@ -1235,7 +1257,7 @@ document.addEventListener('keydown', (e) => {
     const combo = comboFromEvent(e);
     if (!combo) return;
     const moved = keymap.bind(capturing, combo);
-    if (moved) toast(`${keyLabel(combo)} moved from "${moved}"`);
+    if (moved) toast(t('{key} moved from "{command}"', { key: keyLabel(combo), command: t(moved) }));
     capturing = null;
     saveKeymap();
     renderKeysEditor();
@@ -1266,6 +1288,18 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ------------------------------------------------------------------ host events
+
+async function setLanguage(lang) {
+  $('#lang-menu').hidden = true;
+  await flushNotes();
+  await flushExportSettings();
+  await run('app.setLanguage', { lang });
+}
+// Both windows reload in the new language; the roll stays open in the host.
+on('lang.changed', () => location.reload());
+document.addEventListener('pointerdown', (e) => {
+  if (!e.target.closest('#lang-menu, [data-cmd=langMenu]')) $('#lang-menu').hidden = true;
+});
 
 on('project.dirty', setDirty);
 on('toast', (m) => toast(m));
@@ -1309,16 +1343,18 @@ window.__striplightSelfTestCleanup = () => {
 // ------------------------------------------------------------------ start-up
 
 async function init() {
+  await initI18n();
+  $('#lang-code').textContent = currentLanguage().toUpperCase();
   refreshEnabled();
   if (!inHost) {
-    status('Open this page through StriplightPRO.exe — it needs the desktop host.');
+    status(t('Open this page through StriplightPRO.exe — it needs the desktop host.'));
     return;
   }
   const info = await run('app.init');
   state.settings = info.settings;
   state.smoke = !!info.smoke;
   state.toneMethods = info.toneMethods;
-  $('#tone-method').replaceChildren(...info.toneMethods.map((name, i) => new Option(name, String(i))));
+  $('#tone-method').replaceChildren(...info.toneMethods.map((name, i) => new Option(t(name), String(i))));
   $('#status-engine').textContent = `v${info.version} · ${info.turboJpeg}`;
   document.title = `Striplight PRO ${info.version}`;
 

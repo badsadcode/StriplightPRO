@@ -71,7 +71,7 @@ public partial class PreviewWindow : Window
         }
         catch (Exception ex) when (ex is WebView2RuntimeNotFoundException or System.Runtime.InteropServices.COMException)
         {
-            MessageBox.Show(this, "The frame preview could not start: " + ex.Message, "Striplight PRO");
+            MessageBox.Show(this, Services.Loc.T("The frame preview could not start: {error}", ("error", ex.Message)), "Striplight PRO");
             Close();
         }
     }

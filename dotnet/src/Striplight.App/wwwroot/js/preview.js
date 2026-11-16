@@ -6,10 +6,12 @@
 import { call, on } from './bridge.js';
 import { hydrateIcons } from './icons.js';
 import { Keymap } from './keymap.js';
+import { t, tn, initI18n } from './i18n.js';
 
 const keymap = new Keymap();
 
 hydrateIcons();
+await initI18n();
 
 const $ = (s) => document.querySelector(s);
 const view = $('#pv-view');
@@ -55,7 +57,7 @@ async function load(index, { keepView = false } = {}) {
       f.perFrameContrast, f.perFrameBrightness, f.perFrameGamma].join(':')}&q=${q}`;
   if (img.dataset.src === src) return;
   img.dataset.src = src;
-  message('Building frame…', true);
+  message(t('Building frame…'), true);
   img.onload = () => {
     message('');
     applyMode();
@@ -63,7 +65,7 @@ async function load(index, { keepView = false } = {}) {
     call('preview.loaded', { index: info.index, ok: true }).catch(() => {});
   };
   img.onerror = () => {
-    message('Could not build this frame (missing strips or preview).');
+    message(t('Could not build this frame (missing strips or preview).'));
     call('preview.loaded', { index: info.index, ok: false }).catch(() => {});
   };
   img.src = src;
@@ -71,13 +73,13 @@ async function load(index, { keepView = false } = {}) {
 
 function render(info) {
   const f = info.frame;
-  $('#pv-title').textContent = `Frame ${(info.index + 1).toLocaleString()} of ${info.count.toLocaleString()}`;
-  document.title = `Frame ${info.index + 1} — Striplight PRO`;
+  $('#pv-title').textContent = t('Frame {i} of {n}', { i: (info.index + 1).toLocaleString(), n: info.count.toLocaleString() });
+  document.title = `${t('Frame {i}', { i: info.index + 1 })} — Striplight PRO`;
   $('#pv-size').textContent = `${info.width} × ${info.height}`;
   $('#pv-folder').hidden = !f.isMarker;
-  $('#pv-folder').textContent = `Folder ${info.volume} start`;
+  $('#pv-folder').textContent = t('Folder {n} start', { n: info.volume });
   $('#pv-own').hidden = !info.ownOrientation;
-  $('#pv-path').textContent = info.path ? `Folder ${info.volume}, file ${info.fileNo} → ${info.path}` : info.pathError;
+  $('#pv-path').textContent = info.path ? `${t('Folder {n}, file {f}', { n: info.volume, f: info.fileNo })} → ${info.path}` : info.pathError;
   renderTarget(info);
   press('#pv-mirror', info.mirror);
   press('#pv-negative', info.negative);
@@ -88,32 +90,32 @@ function render(info) {
 
 /** The target banner: folder number, target folder segments and file name, big enough to compare. */
 function renderTarget(info) {
-  const t = info.target, box = $('#pv-target');
+  const tg = info.target, box = $('#pv-target');
   box.classList.toggle('start', !!info.frame.isMarker);
   box.classList.toggle('missing', !!info.pathError);
   $('#pv-target-num').textContent = info.volume.toLocaleString();
-  $('#pv-target-of').textContent = `of ${t.folderCount.toLocaleString()}` + (info.frame.isMarker ? ' · starts here' : '');
+  $('#pv-target-of').textContent = t('of {n}', { n: tg.folderCount.toLocaleString() }) + (info.frame.isMarker ? ' · ' + t('starts here') : '');
   const segs = $('#pv-segments');
   segs.replaceChildren();
   if (info.pathError) {
     segs.textContent = info.pathError;
-    $('#pv-file').textContent = t.namingMode === 1 ? `Archive list has ${t.rowCount} row${t.rowCount === 1 ? '' : 's'}` : '';
+    $('#pv-file').textContent = tg.namingMode === 1 ? tn(tg.rowCount, 'Archive list has {n} row', 'Archive list has {n} rows') : '';
     return;
   }
-  if (!t.segments.length) {
+  if (!tg.segments.length) {
     const none = document.createElement('span');
     none.className = 'seg-none';
-    none.textContent = 'output folder itself';
+    none.textContent = t('output folder itself');
     segs.append(none);
   }
-  t.segments.forEach((part, k) => {
+  tg.segments.forEach((part, k) => {
     if (k) { const sep = document.createElement('span'); sep.className = 'seg-sep'; sep.textContent = '›'; segs.append(sep); }
     const el = document.createElement('span');
     el.className = 'seg-part';
     el.textContent = part;
     segs.append(el);
   });
-  $('#pv-file').textContent = t.fileName;
+  $('#pv-file').textContent = tg.fileName;
 }
 
 function toggleTarget() {
@@ -142,7 +144,7 @@ function zoomPercent() { return st.scale * (img.naturalWidth / Math.max(1, fullW
 function apply() {
   img.style.transform = `translate(${st.tx}px, ${st.ty}px) scale(${st.scale})`;
   img.classList.toggle('pixelated', zoomPercent() >= 200);
-  $('#pv-zoom').textContent = st.mode === 'fit' ? `Fit ${Math.round(zoomPercent())}%` : `${Math.round(zoomPercent())}%`;
+  $('#pv-zoom').textContent = st.mode === 'fit' ? `${t('Fit')} ${Math.round(zoomPercent())}%` : `${Math.round(zoomPercent())}%`;
   press('#pv-fit', st.mode === 'fit');
   press('#pv-one', st.mode === 'one');
 }
@@ -282,6 +284,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 on('keymap.changed', (b) => keymap.setOverrides(b));
+on('lang.changed', () => location.reload());
 
 // ------------------------------------------------------------------ host events
 

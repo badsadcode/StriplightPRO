@@ -14,7 +14,7 @@ public partial class App : Application
     private static void OnUnhandled(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
         // Keep the app alive on unexpected UI-thread errors; unsaved work matters more than a clean crash.
-        MessageBox.Show(e.Exception.Message, "Striplight PRO — unexpected error",
+        MessageBox.Show(e.Exception.Message, Services.Loc.T("Striplight PRO — unexpected error"),
             MessageBoxButton.OK, MessageBoxImage.Error);
         e.Handled = true;
     }

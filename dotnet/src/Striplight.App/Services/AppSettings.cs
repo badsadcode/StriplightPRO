@@ -19,6 +19,8 @@ public sealed class AppSettings
     public bool AutoStrips { get; set; }
     public bool ShowStripNumbers { get; set; }
     public bool MultiEdit { get; set; }
+    /// <summary>UI language: "en" (default) or "pl".</summary>
+    public string Language { get; set; } = "en";
     /// <summary>Custom shortcuts: command id -> keys (e.g. "Ctrl+S"). Empty = built-in defaults.</summary>
     public Dictionary<string, List<string>> KeyBindings { get; set; } = [];
     /// <summary>"dark" or "light".</summary>
@@ -88,7 +90,7 @@ public static class Shell
 
     public static void OpenFolder(string path)
     {
-        if (!Directory.Exists(path)) throw new BridgeException("Folder does not exist yet: " + path);
+        if (!Directory.Exists(path)) throw new BridgeException(Loc.T("Folder does not exist yet: {path}", ("path", path)));
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true });
     }
 }

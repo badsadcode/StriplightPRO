@@ -2,6 +2,7 @@
 // The Markdown is stored in the roll's .slf project (<StriplightNotes>).
 
 import { call } from './bridge.js';
+import { t } from './i18n.js';
 
 let editor = null;
 let pending = '';       // notes set before the editor existed
@@ -18,7 +19,7 @@ export function initNotes(container) {
     theme: 'dark',
     usageStatistics: false,  // no tracking ping to the vendor
     hideModeSwitch: false,
-    placeholder: 'Notes about this roll: damage, missing frames, box labels, questions for the archive…',
+    placeholder: t('Notes about this roll: damage, missing frames, box labels, questions for the archive…'),
     toolbarItems: [
       ['heading', 'bold', 'italic', 'strike'],
       ['hr', 'quote'],
