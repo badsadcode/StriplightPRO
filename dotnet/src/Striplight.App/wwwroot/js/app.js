@@ -155,6 +155,7 @@ function applySession(s) {
   detectResume = null;
   reportMfTyped = false;
   $('#report-modal').hidden = true;
+  $('#exp-report-now').hidden = true;
   loadExport(s.export, s.defaultOutputRoot);
   // Saved project state: CW orientation, size check and every panel field.
   if (s.rotateCw !== undefined && $('#rotate-cw').checked !== s.rotateCw) {
@@ -187,6 +188,8 @@ const PANEL_FIELDS = [
   // frames: split, repair, expand, trim, per-frame orientation
   '#split-parts', '#split-preview', '#join-gap', '#join-show', '#ex-l', '#ex-r', '#ex-t', '#ex-b',
   '#trim-show', '#trim-top', '#trim-bottom', '#ovr-rotation', '#ovr-mirror', '#ovr-negative',
+  // export
+  '#exp-follow',
 ];
 let applyingPanels = false;
 
@@ -1069,6 +1072,11 @@ async function exportStart(override = null) {
   setBar('#exp-bar', 0, 1);
   try {
     const r = await call('export.start', args);
+    exportFollow = {
+      order: args.scope === 'selected' ? [...args.indices].sort((a, b) => a - b) : view.frames.map((_, i) => i),
+      done: new Set(), next: 0,
+    };
+    $('#exp-report-now').hidden = true;
     state.exporting = true;
     failedKeys = [];
     refreshRetry();
@@ -1085,6 +1093,20 @@ async function exportStart(override = null) {
 }
 
 const exportCounts = { exported: 0, skipped: 0, failed: 0 };
+
+// "Follow the export" (Lazarus "Follow export page"): workers finish frames out of order, so the
+// view follows the last frame of the unbroken run of finished frames and turns pages forward only.
+let exportFollow = { order: [], done: new Set(), next: 0 };
+function followExport(frameIdx) {
+  const f = exportFollow;
+  f.done.add(frameIdx);
+  let last = -1;
+  while (f.next < f.order.length && f.done.has(f.order[f.next])) last = f.order[f.next++];
+  if (last < 0 || !$('#exp-follow').checked || !view.frames[last]) return;
+  const strip = Math.floor(view.frames[last].leadEdge / state.session.roll.lengthLines);
+  const page = Math.floor(strip / Math.max(1, view.perPage));
+  if (strip < view.firstStrip || strip >= view.firstStrip + view.perPage) view.gotoPage(page);
+}
 on('export.progress', (p) => {
   if (p.done === 1) Object.assign(exportCounts, { exported: 0, skipped: 0, failed: 0 });
   exportCounts[p.outcome.toLowerCase()]++;
@@ -1094,6 +1116,7 @@ on('export.progress', (p) => {
       done: p.done.toLocaleString(), total: p.total.toLocaleString(),
       exported: exportCounts.exported, skipped: exportCounts.skipped, failed: exportCounts.failed,
     });
+  followExport(p.frameIdx);
   if (p.outcome === 'Exported' && view.frames[p.frameIdx]) {
     view.frames[p.frameIdx].isExported = true;
     view.invalidate();
@@ -1108,6 +1131,7 @@ on('export.progress', (p) => {
 on('export.done', (d) => {
   state.exporting = false;
   refreshEnabled();
+  $('#exp-report-now').hidden = !(d.exported > 0 && $('#exp-mode').value === '1');
   refreshRetry();
   const msg = d.fatal ? `${t('Export stopped')}: ${d.fatal}`
     : `${d.cancelled ? t('Export stopped') : t('Export finished')}: ` +

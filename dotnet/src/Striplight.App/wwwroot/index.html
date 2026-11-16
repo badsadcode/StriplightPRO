@@ -410,6 +410,7 @@
             <label class="switch"><input type="checkbox" id="exp-skip"><span></span>Skip existing files</label>
             <label class="switch"><input type="checkbox" id="exp-fallback"><span></span>Use previews when strips are missing</label>
             <label class="switch"><input type="checkbox" id="exp-temp"><span></span>Stage through local temp (network shares)</label>
+            <label class="switch"><input type="checkbox" id="exp-follow"><span></span>Follow the export (show the page being exported)</label>
           </div>
         </div>
         <div class="section run-card">
@@ -426,6 +427,7 @@
           <button class="btn" data-cmd="prepareFolders" data-needs-roll title="Create all output folders now, without exporting"><i data-icon="folder"></i>Prepare folders</button>
           <div class="progress"><div class="progress-bar" id="exp-bar"></div></div>
           <div class="status-line" id="exp-status">Ready</div>
+          <button class="btn btn-primary" data-cmd="report" id="exp-report-now" hidden title="Handover report of this roll for Excel"><i data-icon="notebook-pen"></i>Open report</button>
           <button class="btn" data-cmd="exportRetry" id="exp-retry" hidden title="Export only the frames that failed last time"><i data-icon="rotate-cw"></i><span>Re-export failed</span></button>
           <ul class="failures" id="exp-failures"></ul>
         </div>
