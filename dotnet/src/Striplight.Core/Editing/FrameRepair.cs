@@ -16,11 +16,22 @@ public static class FrameRepair
     /// <summary>Fill gaps: neighbouring selected frames with a gap meet in the middle of it.</summary>
     public static (int Changed, List<FrameRecord> Keep) CloseGaps(List<FrameRecord> frames, IEnumerable<int> selected)
     {
+        var r = CloseGaps(frames, selected, long.MaxValue);
+        return (r.Changed, r.Keep);
+    }
+
+    /// <summary>
+    /// Fill gaps with a limit: gaps wider than <paramref name="maxGap"/> lines are left alone
+    /// (blank shots or empty film inside a signature), so two pages are never stretched across them.
+    /// </summary>
+    public static (int Changed, int Skipped, List<FrameRecord> Keep) CloseGaps(List<FrameRecord> frames, IEnumerable<int> selected, long maxGap)
+    {
         var sel = Sorted(selected, frames.Count).ToHashSet();
-        int changed = 0;
+        int changed = 0, skipped = 0;
         for (int i = 0; i < frames.Count - 1; i++)
         {
             if (!sel.Contains(i) || !sel.Contains(i + 1) || frames[i].TrailEdge >= frames[i + 1].LeadEdge) continue;
+            if (frames[i + 1].LeadEdge - frames[i].TrailEdge > maxGap) { skipped++; continue; }
             long mid = (frames[i].TrailEdge + frames[i + 1].LeadEdge) / 2;
             frames[i].TrailEdge = mid;
             frames[i + 1].LeadEdge = mid;
@@ -28,7 +39,27 @@ public static class FrameRepair
         }
         var keep = sel.Select(i => frames[i]).ToList();
         FrameEditor.Refresh(frames);
-        return (changed, keep);
+        return (changed, skipped, keep);
+    }
+
+    /// <summary>
+    /// The automatic gap limit: <paramref name="factor"/> × the typical (median) gap between the
+    /// selected neighbouring frames, but never less than 10 % of the typical frame length, so pages
+    /// that almost touch still count as normal. Returns -1 when there are no gaps.
+    /// </summary>
+    public static long AutoGapLimit(IReadOnlyList<FrameRecord> frames, IEnumerable<int> selected, double factor)
+    {
+        var sel = Sorted(selected, frames.Count).ToHashSet();
+        var gaps = new List<long>();
+        var lengths = new List<long>();
+        foreach (int i in sel) lengths.Add(frames[i].TrailEdge - frames[i].LeadEdge);
+        for (int i = 0; i < frames.Count - 1; i++)
+            if (sel.Contains(i) && sel.Contains(i + 1) && frames[i + 1].LeadEdge > frames[i].TrailEdge)
+                gaps.Add(frames[i + 1].LeadEdge - frames[i].TrailEdge);
+        if (gaps.Count == 0) return -1;
+        static long Median(List<long> v) { v.Sort(); int n = v.Count; return n % 2 == 1 ? v[n / 2] : (v[n / 2 - 1] + v[n / 2]) / 2; }
+        long medianGap = Median(gaps), medianLength = lengths.Count > 0 ? Median(lengths) : 0;
+        return Math.Max((long)Math.Round(medianGap * Math.Max(1.0, factor)), medianLength / 10);
     }
 
     /// <summary>

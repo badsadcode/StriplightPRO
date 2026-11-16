@@ -39,7 +39,7 @@ const state = {
 };
 
 const view = new StripView($('#strip-canvas'), {
-  onSelectionChanged: () => { refreshFramesPanel(); scrubber.invalidate(); followInPreview(); toneSelectionChanged(); },
+  onSelectionChanged: () => { refreshFramesPanel(); scrubber.invalidate(); followInPreview(); toneSelectionChanged(); refreshGapPreview(); },
   onPageChanged: () => { refreshPager(); scrubber.invalidate(); },
   onHover: (t) => { $('#status-hover').textContent = t; },
   onFramesEdited: (indices) => patchFrames(indices),
@@ -175,6 +175,38 @@ function applySession(s) {
   $('#strip-canvas').focus();
 }
 
+// ------------------------------------------------------------------ fill gaps: limit and preview
+
+function gapArgs() {
+  return { mode: $('#gap-mode').value, factor: Number($('#gap-factor').value) || 2, px: Math.max(0, Number($('#gap-px').value) || 0) };
+}
+
+/** The gaps between neighbouring selected frames and whether Fill gaps would close them (same rule as the host). */
+function computeGaps() {
+  const fr = view.frames, sel = new Set(view.selected), gaps = [], lengths = [];
+  for (const i of sel) if (fr[i]) lengths.push(fr[i].trailEdge - fr[i].leadEdge);
+  for (let i = 0; i < fr.length - 1; i++) {
+    if (!sel.has(i) || !sel.has(i + 1) || fr[i + 1].leadEdge <= fr[i].trailEdge) continue;
+    gaps.push({ i, from: fr[i].trailEdge, to: fr[i + 1].leadEdge, size: fr[i + 1].leadEdge - fr[i].trailEdge,
+      left: Math.min(fr[i].leftEdge, fr[i + 1].leftEdge), right: Math.max(fr[i].rightEdge, fr[i + 1].rightEdge) });
+  }
+  const a = gapArgs();
+  const median = (v) => { const s = [...v].sort((x, y) => x - y), n = s.length; return n % 2 ? s[(n - 1) / 2] : Math.trunc((s[n / 2 - 1] + s[n / 2]) / 2); };
+  let limit = Infinity;
+  if (a.mode === 'px') limit = a.px;
+  else if (a.mode === 'auto' && gaps.length) limit = Math.max(Math.round(median(gaps.map((g) => g.size)) * Math.max(1, a.factor)), Math.trunc((lengths.length ? median(lengths) : 0) / 10));
+  for (const g of gaps) g.fill = g.size <= limit;
+  return gaps;
+}
+
+function refreshGapPreview() {
+  $('#gap-factor-wrap').hidden = $('#gap-mode').value !== 'auto';
+  $('#gap-px-wrap').hidden = $('#gap-mode').value !== 'px';
+  view.gapPreview = { show: $('#gap-show').checked && view.selected.size > 1, list: $('#gap-show').checked ? computeGaps() : [] };
+  view.invalidate();
+}
+['#gap-mode', '#gap-factor', '#gap-px', '#gap-show'].forEach((id) => $(id).addEventListener(id === '#gap-mode' || id === '#gap-show' ? 'change' : 'input', refreshGapPreview));
+
 // ------------------------------------------------------------------ project panel state
 // Every panel field of a project is saved in its .slf (via the host) and comes back on open,
 // so a reopened project is exactly as it was left — not reset to defaults.
@@ -187,6 +219,7 @@ const PANEL_FIELDS = [
   '#sug-num', '#sug-before', '#sug-every',
   // frames: split, repair, expand, trim, per-frame orientation
   '#split-parts', '#split-preview', '#join-gap', '#join-show', '#ex-l', '#ex-r', '#ex-t', '#ex-b',
+  '#gap-mode', '#gap-factor', '#gap-px', '#gap-show',
   '#trim-show', '#trim-top', '#trim-bottom', '#ovr-rotation', '#ovr-mirror', '#ovr-negative',
   // export
   '#exp-follow',
@@ -216,6 +249,7 @@ function applyPanels(state) {
     setStrictness($('#sug-num').value);
     refreshSplitPreview();
     refreshOverlays();
+    refreshGapPreview();
   } finally { applyingPanels = false; }
 }
 
@@ -304,6 +338,7 @@ function applyFrames(frames, keepKeys) {
   frames.forEach((f, i) => { if (keys.has(frameKey(f))) keep.push(i); });
   view.setFrames(frames, keep);
   refreshFramesPanel();
+  refreshGapPreview();
   refreshRollMeta();
   refreshToneTarget();
   scrubber.invalidate();
@@ -1310,7 +1345,13 @@ const commands = {
   selectSuggestedSection: () => { const i = selection()[0]; if (i !== undefined) selectSection(i, true); },
   deleteSection: () => { const i = selection()[0]; if (i !== undefined) deleteSection(i); },
   deleteQuick: () => deleteSelected(false),
-  closeGaps: () => frameTool('frames.closeGaps'),
+  closeGaps: async () => {
+    const r = await run('frames.closeGaps', { indices: selection(), ...gapArgs() });
+    applyFrames(r.frames, []);
+    view.setFrames(r.frames, r.select);
+    refreshFramesPanel();
+    status(tn(r.count, 'Filled {n} gap', 'Filled {n} gaps') + (r.skipped ? ' · ' + tn(r.skipped, 'skipped {n} big gap', 'skipped {n} big gaps') : ''));
+  },
   joinClose: () => frameTool('frames.joinClose', { gap: Number($('#join-gap').value) || 0 }),
   expand: expandSelected,
   applyTrim,

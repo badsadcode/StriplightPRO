@@ -29,3 +29,47 @@ public class SuggestedToggleTests
         Assert.Equal((1, 3), FrameRepair.Section(f, 2, includeSuggested: true));
     }
 }
+
+public class FillGapsLimitTests
+{
+    // Tom's sketch: pages 1-2-3 close together, a big gap, 4-5-6, a big gap, 7.
+    private static List<FrameRecord> Sketch()
+    {
+        long[] leads = [0, 1100, 2200, 3900, 5000, 6100, 7800];
+        return leads.Select(l => new FrameRecord { LeadEdge = l, TrailEdge = l + 1000, LeftEdge = 0, RightEdge = 900 }).ToList();
+    }
+
+    [Fact]
+    public void AutoFillsTheNormalGapsAndSkipsTheBigOnes()
+    {
+        var f = Sketch();
+        int[] all = [0, 1, 2, 3, 4, 5, 6];
+        long limit = FrameRepair.AutoGapLimit(f, all, 2.0);           // typical gap 100 → limit 200 (floor 100)
+        Assert.Equal(200, limit);
+        var (changed, skipped, _) = FrameRepair.CloseGaps(f, all, limit);
+        Assert.Equal((4, 2), (changed, skipped));
+        Assert.Equal(f[1].LeadEdge, f[0].TrailEdge);                  // 1-2 filled
+        Assert.Equal(f[2].LeadEdge, f[1].TrailEdge);                  // 2-3 filled
+        Assert.Equal((3200L, 3900L), (f[2].TrailEdge, f[3].LeadEdge)); // 3-4 untouched
+        Assert.Equal((7100L, 7800L), (f[5].TrailEdge, f[6].LeadEdge)); // 6-7 untouched
+    }
+
+    [Fact]
+    public void WithoutALimitEveryGapIsFilledAsBefore()
+    {
+        var f = Sketch();
+        var (changed, skipped, _) = FrameRepair.CloseGaps(f, [0, 1, 2, 3, 4, 5, 6], long.MaxValue);
+        Assert.Equal((6, 0), (changed, skipped));
+    }
+
+    [Fact]
+    public void TouchingPagesStillCountAsNormal()
+    {
+        long[] leads = [0, 1002, 2004, 3700];                          // 2-line gaps, then a big one
+        var f = leads.Select(l => new FrameRecord { LeadEdge = l, TrailEdge = l + 1000, RightEdge = 900 }).ToList();
+        long limit = FrameRepair.AutoGapLimit(f, [0, 1, 2, 3], 2.0);
+        Assert.Equal(100, limit);                                      // floor: 10 % of the frame length
+        var (changed, skipped, _) = FrameRepair.CloseGaps(f, [0, 1, 2, 3], limit);
+        Assert.Equal((2, 1), (changed, skipped));
+    }
+}

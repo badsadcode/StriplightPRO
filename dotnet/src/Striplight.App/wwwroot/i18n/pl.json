@@ -111,8 +111,17 @@
   "Fill gaps": "Wypełnij przerwy",
   "Join selected fragments closer than the join gap": "Połącz zaznaczone fragmenty bliższe niż odstęp łączenia",
   "Join close": "Połącz bliskie",
-  "Join gap": "Odstęp łączenia",
+  "Which gaps Fill gaps may close. Auto leaves unusually big gaps (blank shots, empty film) alone.": "Które przerwy może wypełnić „Wypełnij przerwy”. Auto pomija nietypowo duże przerwy (puste klatki, pusty film).",
+  "Auto · × typical gap": "Auto · × typowa przerwa",
+  "Up to a fixed size": "Do stałej wielkości",
+  "Every gap": "Każda przerwa",
+  "Gaps up to this many times the typical gap between the selected frames are filled; bigger ones are skipped": "Wypełniane są przerwy do tylu razy większe od typowej przerwy między zaznaczonymi klatkami; większe są pomijane",
+  "Factor": "Mnożnik",
+  "Gaps up to this size are filled; bigger ones are skipped": "Wypełniane są przerwy do tej wielkości; większe są pomijane",
+  "Max gap": "Maks. przerwa",
   "px": "px",
+  "Show gaps (green = fill, red = skip)": "Pokaż przerwy (zielone = wypełnij, czerwone = pomiń)",
+  "Join gap": "Odstęp łączenia",
   "Show reach": "Pokaż zasięg",
   "Left": "Lewo",
   "Right": "Prawo",
@@ -551,6 +560,18 @@
     "few": "pominięto {n} nazwy folderów ze znakiem „;”",
     "many": "pominięto {n} nazw folderów ze znakiem „;”",
     "other": "pominięto {n} nazwy folderów ze znakiem „;”"
+  },
+  "Filled {n} gaps": {
+    "one": "Wypełniono {n} przerwę",
+    "few": "Wypełniono {n} przerwy",
+    "many": "Wypełniono {n} przerw",
+    "other": "Wypełniono {n} przerwy"
+  },
+  "skipped {n} big gaps": {
+    "one": "pominięto {n} dużą przerwę",
+    "few": "pominięto {n} duże przerwy",
+    "many": "pominięto {n} dużych przerw",
+    "other": "pominięto {n} duże przerwy"
   },
   "Created {n} folders in {folder}": {
     "one": "Utworzono {n} folder w {folder}",

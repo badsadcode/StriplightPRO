@@ -297,9 +297,19 @@ public sealed class AppController
         _bridge.On("frames.closeGaps", args =>
         {
             PushUndo();
-            var (changed, keep) = FrameRepair.CloseGaps(_project.Frames, Indices(args));
+            // Limit: "auto" = factor × typical gap of the selection, "px" = fixed, "all" = no limit.
+            string mode = BridgeHost.Arg(args, "mode", "all");
+            var sel = Indices(args);
+            long limit = mode switch
+            {
+                "auto" => FrameRepair.AutoGapLimit(_project.Frames, sel, BridgeHost.Arg(args, "factor", 2.0)),
+                "px" => Math.Max(0, BridgeHost.Arg(args, "px", 0L)),
+                _ => long.MaxValue,
+            };
+            if (limit < 0) limit = long.MaxValue;   // no gaps at all
+            var (changed, skipped, keep) = FrameRepair.CloseGaps(_project.Frames, sel, limit);
             Changed(args);
-            return new { frames = _project.Frames, count = changed, select = SelectIndices(keep) };
+            return new { frames = _project.Frames, count = changed, skipped, limit = limit == long.MaxValue ? -1 : limit, select = SelectIndices(keep) };
         });
         _bridge.On("frames.joinClose", args =>
         {

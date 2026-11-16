@@ -48,7 +48,8 @@ export class StripView {
     this.trim = { show: false, top: 0, bottom: 0 };     // trim bands (Lazarus "Trim")
     this.area = { show: false, top: 0, bottom: 0 };     // detection ignore area
     this.range = { show: false, from: 0, to: 0 };       // detection strip range (0-based, inclusive)
-    this.join = { show: false, gap: 600 };              // "join close" reach after selected frames
+    this.join = { show: false, gap: 600 };
+    this.gapPreview = { show: false, list: [] };       // Fill gaps preview: green = filled, red = skipped              // "join close" reach after selected frames
     this.refreshTheme();
     this.imageVersion = 1;
     this.images = new Map();      // stripIdx -> { img, version, state }
@@ -325,6 +326,7 @@ export class StripView {
     this.drawBands();
     this.drawFrames();
     this.drawJoinReach();
+    this.drawGapPreview();
     this.drawRangeMarkers();
     if (this.drag && this.drag.mode === 'draw' && this.drag.moved) this.drawRubberBand();
     if (allLoaded) this.prefetchNextPage();
@@ -531,6 +533,24 @@ export class StripView {
     };
     mark(this.range.from, false, '#22c55e', t('Detect start'));
     mark(this.range.to, true, '#ef4444', t('Detect end'));
+  }
+
+  /** Fill gaps preview: each gap between neighbouring selected frames, green if it will be filled, red if skipped. */
+  drawGapPreview() {
+    if (!this.gapPreview.show) return;
+    const ctx = this.ctx;
+    for (const g of this.gapPreview.list) {
+      const rect = { leadEdge: g.from, trailEdge: g.to, leftEdge: g.left, rightEdge: g.right };
+      for (const s of this.frameSegments(rect)) {
+        ctx.fillStyle = g.fill ? 'rgba(34,197,94,0.30)' : 'rgba(239,68,68,0.32)';
+        ctx.fillRect(s.x1, s.y1, s.x2 - s.x1, s.y2 - s.y1);
+        ctx.strokeStyle = g.fill ? 'rgba(34,197,94,0.95)' : 'rgba(239,68,68,0.95)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash(g.fill ? [] : [5, 3]);
+        ctx.strokeRect(s.x1 + 0.75, s.y1 + 0.75, Math.max(0, s.x2 - s.x1 - 1.5), Math.max(0, s.y2 - s.y1 - 1.5));
+        ctx.setLineDash([]);
+      }
+    }
   }
 
   /** "Join close" reach: how far after each selected frame a fragment still gets joined. */

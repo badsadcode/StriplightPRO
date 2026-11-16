@@ -188,6 +188,18 @@
             <button class="btn" data-cmd="joinClose" data-needs-sel title="Join selected fragments closer than the join gap"><i data-icon="combine"></i>Join close</button>
           </div>
           <div class="field-grid two">
+            <label class="field" title="Which gaps Fill gaps may close. Auto leaves unusually big gaps (blank shots, empty film) alone.">Fill gaps
+              <select id="gap-mode">
+                <option value="auto">Auto · × typical gap</option>
+                <option value="px">Up to a fixed size</option>
+                <option value="all">Every gap</option>
+              </select>
+            </label>
+            <label class="field" id="gap-factor-wrap" title="Gaps up to this many times the typical gap between the selected frames are filled; bigger ones are skipped">Factor<span class="suffix"><input type="number" id="gap-factor" min="1" max="20" step="0.5" value="2"><em>×</em></span></label>
+            <label class="field" id="gap-px-wrap" hidden title="Gaps up to this size are filled; bigger ones are skipped">Max gap<span class="suffix"><input type="number" id="gap-px" min="0" value="300"><em>px</em></span></label>
+          </div>
+          <label class="switch"><input type="checkbox" id="gap-show"><span></span>Show gaps (green = fill, red = skip)</label>
+          <div class="field-grid two">
             <label class="field">Join gap<span class="suffix"><input type="number" id="join-gap" min="0" value="600"><em>px</em></span></label>
             <label class="switch" style="align-self:end;padding-bottom:7px"><input type="checkbox" id="join-show"><span></span>Show reach</label>
           </div>
