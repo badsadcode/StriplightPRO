@@ -533,7 +533,8 @@ input[type="range"]:hover::-webkit-slider-thumb { box-shadow: 0 0 0 6px rgba(245
 
 /* ============================================================ preview window (preview.html) */
 
-.pv-body { grid-template-rows: auto 1fr 28px; }
+.pv-body { grid-template-rows: auto auto 1fr 28px; }
+.pv-body.no-target { grid-template-rows: auto 1fr 28px; }
 .pv-bar {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 12px;
   background: var(--bg); border-bottom: 1px solid var(--border);
@@ -563,3 +564,23 @@ input[type="range"]:hover::-webkit-slider-thumb { box-shadow: 0 0 0 6px rgba(245
 
 .path-preview { white-space: pre-line; }
 .digits-example { align-self: end; height: 34px; display: flex; align-items: center; font-family: var(--mono); color: var(--text-3); }
+
+/* Target banner: where the current frame will be exported, big enough to compare with the page. */
+.pv-target {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 22px;
+  padding: 10px 18px; background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.pv-target.start { background: linear-gradient(90deg, color-mix(in srgb, var(--f-marker) 22%, var(--surface)), var(--surface) 70%); box-shadow: inset 4px 0 0 var(--f-marker); }
+.pv-target.missing { background: var(--danger-soft); box-shadow: inset 4px 0 0 var(--danger); }
+.pv-target-label { display: block; font-size: 10.5px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); margin-bottom: 2px; }
+.pv-target-folder { display: grid; grid-template-columns: auto auto; column-gap: 6px; align-items: baseline; }
+.pv-target-folder .pv-target-label { grid-column: 1 / -1; }
+.pv-target-num { font: 700 26px/1 var(--font-display); font-variant-numeric: tabular-nums; }
+.pv-target-of { color: var(--text-3); font-size: 13px; }
+.pv-target.start .pv-target-num { color: color-mix(in srgb, var(--f-marker) 80%, var(--text)); }
+.pv-segments { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font: 650 22px/1.15 var(--mono); }
+.pv-segments .seg-part { padding: 1px 8px; border-radius: 6px; background: var(--surface-3); border: 1px solid var(--border-2); }
+.pv-segments .seg-sep { color: var(--text-3); font-weight: 400; }
+.pv-segments .seg-none { color: var(--text-3); font: 500 14px var(--font); }
+.pv-file { font: 600 17px var(--mono); user-select: text; white-space: nowrap; }
+.pv-target.missing .pv-segments, .pv-target.missing .pv-file { color: var(--danger); font: 600 14px var(--font); }

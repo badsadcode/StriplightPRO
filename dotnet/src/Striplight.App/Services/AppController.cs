@@ -269,6 +269,7 @@ public sealed class AppController
         {
             _export = BridgeHost.Args<ExportDto>(args);
             StoreExportToRollAndSettings();
+            _bridge.Emit("export.changed", null); // the preview's target banner follows naming changes
             return null;
         });
 
@@ -344,13 +345,30 @@ public sealed class AppController
         var f = frames[index];
         var p = FrameBuilder.Resolve(f, _process.ToProcessSettings(_settings.RotateCw));
         bool quarter = p.Rotation is 90 or 270;
-        string path = "", pathError = "";
-        try { path = ExportNaming.PathForFrame(frames, index, _export.ToNaming(ExportNaming.DefaultOutputRoot(ProjectRootPath, _project.Roll))).FullPath; }
+        string path = "", pathError = "", folder = "", fileName = "", root = "";
+        var naming = _export.ToNaming(ExportNaming.DefaultOutputRoot(ProjectRootPath, _project.Roll));
+        root = naming.OutputRoot;
+        try
+        {
+            var target = ExportNaming.PathForFrame(frames, index, naming);
+            path = target.FullPath;
+            fileName = target.FileName;
+            // Target folder relative to the output root: what the operator compares with the page.
+            folder = Path.GetRelativePath(root, target.FolderPath);
+            if (folder == ".") folder = "";
+        }
         catch (InvalidOperationException e) { pathError = e.Message; }
         var (volume, fileNo) = ExportNaming.VolumeAndFile(frames, index);
+        int folderCount = ExportNaming.VolumeAndFile(frames, frames.Count - 1).Volume;
+        int rowCount = ExportNaming.ArchiveRows(_export.ArchiveList).Count;
         return new
         {
             index, count = frames.Count, frame = f, volume, fileNo, path, pathError,
+            target = new
+            {
+                root, folder, fileName, folderCount, namingMode = _export.NamingMode,
+                rowCount, segments = folder.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries),
+            },
             prevMarker = FrameEditor.FindMarker(frames, index, forward: false),
             nextMarker = FrameEditor.FindMarker(frames, index, forward: true),
             width = quarter ? f.Width : (int)f.Height, height = quarter ? (int)f.Height : f.Width,

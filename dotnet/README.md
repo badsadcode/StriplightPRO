@@ -149,7 +149,7 @@ Main window (same keys as the Lazarus edition; `?` shows the list in the app):
 | Enter / double-click | Open the preview window |
 | Esc while dragging | Cancel the drag |
 
-Preview window: X / C (or ← / →) previous / next frame by the step, G / F folder markers, R / Shift+R rotate ±90°, M mirror, N negative, A marker, wheel zoom around the cursor, drag to pan, double-click or 0 / 1 for fit / 1:1, Q full quality, T always on top, Esc close.
+Preview window: X / C (or ← / →) previous / next frame by the step, G / F folder markers, R / Shift+R rotate ±90°, M mirror, N negative, A marker, wheel zoom around the cursor, drag to pan, double-click or 0 / 1 for fit / 1:1, Q full quality, T always on top, I show / hide the target banner (folder number, target folder, file name), Esc close.
 
 ## Interface
 

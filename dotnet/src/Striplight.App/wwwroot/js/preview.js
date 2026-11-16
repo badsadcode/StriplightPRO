@@ -72,12 +72,51 @@ function render(info) {
   $('#pv-folder').textContent = `Folder ${info.volume} start`;
   $('#pv-own').hidden = !info.ownOrientation;
   $('#pv-path').textContent = info.path ? `Folder ${info.volume}, file ${info.fileNo} → ${info.path}` : info.pathError;
+  renderTarget(info);
   press('#pv-mirror', info.mirror);
   press('#pv-negative', info.negative);
   press('#pv-marker', f.isMarker);
   press('#pv-quality', st.fullQuality);
   press('#pv-topmost', st.topmost);
 }
+
+/** The target banner: folder number, target folder segments and file name, big enough to compare. */
+function renderTarget(info) {
+  const t = info.target, box = $('#pv-target');
+  box.classList.toggle('start', !!info.frame.isMarker);
+  box.classList.toggle('missing', !!info.pathError);
+  $('#pv-target-num').textContent = info.volume.toLocaleString();
+  $('#pv-target-of').textContent = `of ${t.folderCount.toLocaleString()}` + (info.frame.isMarker ? ' · starts here' : '');
+  const segs = $('#pv-segments');
+  segs.replaceChildren();
+  if (info.pathError) {
+    segs.textContent = info.pathError;
+    $('#pv-file').textContent = t.namingMode === 1 ? `Archive list has ${t.rowCount} row${t.rowCount === 1 ? '' : 's'}` : '';
+    return;
+  }
+  if (!t.segments.length) {
+    const none = document.createElement('span');
+    none.className = 'seg-none';
+    none.textContent = 'output folder itself';
+    segs.append(none);
+  }
+  t.segments.forEach((part, k) => {
+    if (k) { const sep = document.createElement('span'); sep.className = 'seg-sep'; sep.textContent = '›'; segs.append(sep); }
+    const el = document.createElement('span');
+    el.className = 'seg-part';
+    el.textContent = part;
+    segs.append(el);
+  });
+  $('#pv-file').textContent = t.fileName;
+}
+
+function toggleTarget() {
+  const hidden = document.body.classList.toggle('no-target');
+  $('#pv-target').hidden = hidden;
+  try { localStorage.setItem('striplight.preview.target', hidden ? 'off' : 'on'); } catch { /* storage unavailable */ }
+  applyMode();
+}
+try { if (localStorage.getItem('striplight.preview.target') === 'off') { document.body.classList.add('no-target'); $('#pv-target').hidden = true; } } catch { /* ignore */ }
 
 function press(sel, on) { $(sel).setAttribute('aria-pressed', String(!!on)); }
 
@@ -233,7 +272,7 @@ document.addEventListener('keydown', (e) => {
     m: actions.mirror, n: actions.negative, a: actions.marker,
     '+': actions.zoomIn, '=': actions.zoomIn, '-': actions.zoomOut,
     '0': actions.fit, ' ': actions.fit, '1': actions.one,
-    q: actions.quality, t: actions.topmost,
+    q: actions.quality, t: actions.topmost, i: toggleTarget,
     home: () => go(0), end: () => go((st.info?.count ?? 1) - 1),
     escape: () => call('preview.close').catch(() => {}),
   };
@@ -248,5 +287,6 @@ on('frames.changed', (d) => { if (d?.source !== 'preview') load(st.index, { keep
 on('theme.changed', (d) => { document.documentElement.dataset.theme = d.theme; });
 // Tone or orientation changed in the main window: rebuild this frame (keeps zoom and position).
 on('images.changed', () => load(st.index, { keepView: true }));
+on('export.changed', () => load(st.index, { keepView: true })); // naming or archive list edited
 
 load(st.index);
