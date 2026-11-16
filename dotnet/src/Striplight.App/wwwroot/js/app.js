@@ -321,6 +321,24 @@ function nextAbnormal(mode = 0) {
 }
 
 // ---- size check (Lazarus "Detect Oversized / Undersized Frames")
+/** Same rule as FrameList.MarkOversizedUndersized in Core, for frames the host has not checked yet. */
+function markSizes(frames) {
+  const n = frames.length;
+  if (!n) return;
+  const h = frames.map((f) => f.trailEdge - f.leadEdge).sort((a, b) => a - b);
+  const median = n % 2 ? h[(n - 1) / 2] : Math.trunc((h[n / 2 - 1] + h[n / 2]) / 2);
+  if (!median) return;
+  const r = sizeRules();
+  const roundEven = (x) => { const f = Math.floor(x), d = x - f; return d > 0.5 || (d === 0.5 && f % 2) ? f + 1 : f; };
+  const overH = roundEven(median * (r.overOn ? 1 + Math.min(200, r.overPercent) / 100 : 9999));
+  const underH = roundEven(median * (r.underOn ? 1 - Math.min(99, r.underPercent) / 100 : 0));
+  for (const f of frames) {
+    const len = f.trailEdge - f.leadEdge;
+    f.isOversized = len > overH;
+    f.isUndersized = len < underH && len > 0;
+  }
+}
+
 function sizeRules() {
   return {
     overOn: $('#sz-over').checked, overPercent: Number($('#sz-over-num').value) || 0,
@@ -850,8 +868,10 @@ function showLiveDetect(p) {
   liveDetect.found.length = Math.min(liveDetect.found.length, p.fromIndex);
   liveDetect.found.push(...p.frames);
   const shown = liveDetect.base.concat(liveDetect.found).sort((a, b) => a.leadEdge - b.leadEdge || a.trailEdge - b.trailEdge);
+  markSizes(shown);   // red odd-size frames while detecting (the host re-checks at the end)
   view.setFrames(shown, []);
   $('#stat-frames').textContent = shown.length.toLocaleString();
+  $('#stat-abnormal').textContent = shown.filter((f) => f.isOversized || f.isUndersized).length.toLocaleString();
   // follow: keep the strip being scanned on screen
   const page = Math.floor(p.stripIndex / Math.max(1, view.perPage));
   if (page !== view.page) view.gotoPage(page);
