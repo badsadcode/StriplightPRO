@@ -15,6 +15,20 @@ public sealed class AppSettings
     public double Zoom { get; set; } = 1.0;
     public bool RotateCw { get; set; }
     public int FrameFillOpacity { get; set; } = 35;
+    /// <summary>Fit as many strips per row as the window allows.</summary>
+    public bool AutoStrips { get; set; }
+    public bool ShowStripNumbers { get; set; }
+    /// <summary>"dark" or "light".</summary>
+    public string Theme { get; set; } = "dark";
+
+    // Preview window
+    public bool PreviewTopmost { get; set; }
+    public int PreviewStep { get; set; } = 1;
+    public bool PreviewFullQuality { get; set; }
+    public double? PreviewLeft { get; set; }
+    public double? PreviewTop { get; set; }
+    public double PreviewWidth { get; set; } = 960;
+    public double PreviewHeight { get; set; } = 760;
 
     // Export defaults
     public string Prefix { get; set; } = "";

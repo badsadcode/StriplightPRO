@@ -38,7 +38,7 @@ public sealed class SmokeTest(string outputDir)
         Write(new { ok = false, log = _log });
     }
 
-    public async Task RunAsync(Window window, CoreWebView2 core, AppController controller)
+    public async Task RunAsync(Window window, CoreWebView2 core, AppController controller, IWindowHost host)
     {
         var result = new Dictionary<string, object?>();
         try
@@ -59,7 +59,10 @@ public sealed class SmokeTest(string outputDir)
                 Log("self-test " + r.GetRawText());
                 if (!r.TryGetProperty("ok", out var ok) || !ok.GetBoolean()) Fail("page self-test reported a problem");
             }
-            await Capture(core, "02-frame-preview");
+            await Task.Delay(600);
+            if (host.Preview?.Core is { } previewCore) await Capture(previewCore, "02-preview-window");
+            else Fail("preview window did not open");
+            await Capture(core, "04-light-theme");
             await core.ExecuteScriptAsync("window.__striplightSelfTestCleanup && window.__striplightSelfTestCleanup()");
             await Task.Delay(800);
             await Capture(core, "03-adjust-panel");

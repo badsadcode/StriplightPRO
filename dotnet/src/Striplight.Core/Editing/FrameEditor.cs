@@ -69,4 +69,99 @@ public static class FrameEditor
             f.CustomBrightness = f.CustomContrast = f.CustomGamma = -1;
         }
     }
+
+    // ---- Lazarus frame tools (same semantics as TMainForm.OnMergeAdjacent etc.) ----
+
+    private static void Union(FrameRecord a, FrameRecord b)
+    {
+        a.LeadEdge = Math.Min(a.LeadEdge, b.LeadEdge);
+        a.TrailEdge = Math.Max(a.TrailEdge, b.TrailEdge);
+        a.LeftEdge = Math.Min(a.LeftEdge, b.LeftEdge);
+        a.RightEdge = Math.Max(a.RightEdge, b.RightEdge);
+    }
+
+    /// <summary>
+    /// E: merges the selected frames in pairs (1st+2nd, 3rd+4th, ...) into their bounding box.
+    /// Returns the frames to keep selected.
+    /// </summary>
+    public static List<FrameRecord> MergePairs(List<FrameRecord> frames, IEnumerable<int> indices)
+    {
+        var sel = indices.Where(i => i >= 0 && i < frames.Count).Distinct().Order().Select(i => frames[i]).ToList();
+        var keep = new List<FrameRecord>();
+        for (int k = 0; k + 1 < sel.Count; k += 2)
+        {
+            Union(sel[k], sel[k + 1]);
+            frames.Remove(sel[k + 1]);
+            keep.Add(sel[k]);
+        }
+        if (sel.Count % 2 == 1) keep.Add(sel[^1]);
+        Refresh(frames);
+        return keep;
+    }
+
+    /// <summary>J: repeatedly combines selected frames that overlap along the film.</summary>
+    public static List<FrameRecord> CombineOverlapping(List<FrameRecord> frames, IEnumerable<int> indices)
+    {
+        var sel = indices.Where(i => i >= 0 && i < frames.Count).Distinct().Order().Select(i => frames[i]).ToList();
+        bool changed;
+        do
+        {
+            changed = false;
+            for (int i = 0; i < sel.Count && !changed; i++)
+                for (int j = i + 1; j < sel.Count; j++)
+                {
+                    if (sel[i].LeadEdge < sel[j].TrailEdge && sel[i].TrailEdge > sel[j].LeadEdge)
+                    {
+                        Union(sel[i], sel[j]);
+                        frames.Remove(sel[j]);
+                        sel.RemoveAt(j);
+                        changed = true;
+                        break;
+                    }
+                }
+        } while (changed);
+        Refresh(frames);
+        return sel;
+    }
+
+    /// <summary>S: splits each selected frame into <paramref name="parts"/> equal parts along the film.</summary>
+    public static List<FrameRecord> Split(List<FrameRecord> frames, IEnumerable<int> indices, int parts)
+    {
+        var created = new List<FrameRecord>();
+        if (parts < 2) return created;
+        var sel = indices.Where(i => i >= 0 && i < frames.Count).Distinct().Select(i => frames[i]).ToList();
+        foreach (var f in sel)
+        {
+            long part = Math.Max(1, f.Height / parts);
+            long trail = f.TrailEdge;
+            for (int k = 0; k < parts; k++)
+            {
+                var p = k == 0 ? f : f.Clone();
+                p.LeadEdge = f.LeadEdge + k * part;
+                p.TrailEdge = k == parts - 1 ? trail : f.LeadEdge + (k + 1) * part;
+                if (k > 0) { p.IsMarker = false; frames.Add(p); }
+                created.Add(p); // the first part is the original frame and keeps its marker
+            }
+        }
+        Refresh(frames);
+        return created;
+    }
+
+    /// <summary>Z: toggles the suggested-marker flag of a single frame.</summary>
+    public static void ToggleSuggested(List<FrameRecord> frames, int index)
+    {
+        if (index >= 0 && index < frames.Count) frames[index].IsSuggested = !frames[index].IsSuggested;
+    }
+
+    /// <summary>F/G: next or previous folder marker after <paramref name="from"/>, wrapping around; -1 if none.</summary>
+    public static int FindMarker(IReadOnlyList<FrameRecord> frames, int from, bool forward)
+    {
+        int n = frames.Count;
+        for (int k = 1; k <= n; k++)
+        {
+            int i = ((forward ? from + k : from - k) % n + n) % n;
+            if (frames[i].IsMarker) return i;
+        }
+        return -1;
+    }
 }

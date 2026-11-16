@@ -2,8 +2,7 @@
 // exported frame along the whole roll, with the visible page highlighted. Click or
 // drag to jump.
 
-const css = getComputedStyle(document.documentElement);
-const C = (n) => css.getPropertyValue(n).trim();
+const C = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
 export class Scrubber {
   constructor(canvas, view) {
@@ -43,18 +42,23 @@ export class Scrubber {
     const x = (lead) => pad + (lead / total) * tw;
 
     // track
-    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    ctx.fillStyle = document.documentElement.dataset.theme === 'light' ? 'rgba(15,23,42,0.07)' : 'rgba(255,255,255,0.05)';
     ctx.fillRect(pad, h / 2 - 2, tw, 4);
 
     // frames: faint base ticks, then highlights
-    ctx.fillStyle = 'rgba(255,255,255,0.10)';
+    ctx.fillStyle = document.documentElement.dataset.theme === 'light' ? 'rgba(15,23,42,0.16)' : 'rgba(255,255,255,0.10)';
     for (const f of v.frames) ctx.fillRect(x(f.leadEdge), h / 2 - 5, 1, 10);
     ctx.fillStyle = C('--f-exported');
     for (const f of v.frames) if (f.isExported) ctx.fillRect(x(f.leadEdge), h - 7, Math.max(1, x(f.trailEdge) - x(f.leadEdge)), 2);
     ctx.fillStyle = C('--f-abnormal');
     for (const f of v.frames) if (f.isOversized || f.isUndersized) ctx.fillRect(x(f.leadEdge) - 1, h / 2 - 6, 3, 12);
+    // Thousands of markers would turn the bar solid: draw them thinner and fainter when dense.
+    const markers = v.frames.filter((f) => f.isMarker);
+    const dense = markers.length > tw / 4;
     ctx.fillStyle = C('--f-marker');
-    for (const f of v.frames) if (f.isMarker) ctx.fillRect(x(f.leadEdge) - 1, 5, 2, h - 10);
+    ctx.globalAlpha = dense ? 0.45 : 1;
+    for (const f of markers) ctx.fillRect(x(f.leadEdge) - (dense ? 0 : 1), 5, dense ? 1 : 2, h - 10);
+    ctx.globalAlpha = 1;
     ctx.fillStyle = C('--f-selected');
     for (const i of v.selected) { const f = v.frames[i]; if (f) ctx.fillRect(x(f.leadEdge) - 1, h / 2 - 7, 3, 14); }
 

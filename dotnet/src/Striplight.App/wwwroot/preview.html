@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Frame preview</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body class="pv-body">
+  <header class="pv-bar">
+    <div class="pv-title">
+      <h1 id="pv-title">Frame</h1>
+      <span class="chip" id="pv-size"></span>
+      <span class="chip chip-warn" id="pv-folder" hidden></span>
+      <span class="chip" id="pv-own" hidden>Own orientation</span>
+    </div>
+
+    <div class="pv-group" role="group" aria-label="Navigate">
+      <button class="pv-btn" data-pv="prevMarker" title="Previous folder marker (G)"><i data-icon="skip-back"></i><kbd>G</kbd></button>
+      <button class="pv-btn" data-pv="prev" title="Previous frame (X, ←)"><i data-icon="chevron-left"></i><kbd>X</kbd></button>
+      <label class="pv-step" title="How many frames X / C move">Step <input id="pv-step" type="number" min="1" value="1"></label>
+      <button class="pv-btn" data-pv="next" title="Next frame (C, →)"><kbd>C</kbd><i data-icon="chevron-right"></i></button>
+      <button class="pv-btn" data-pv="nextMarker" title="Next folder marker (F)"><kbd>F</kbd><i data-icon="skip-forward"></i></button>
+    </div>
+
+    <div class="pv-group" role="group" aria-label="This frame">
+      <button class="pv-btn" data-pv="rotL" title="Rotate −90° (Shift+R)"><i data-icon="rotate-ccw"></i></button>
+      <button class="pv-btn" data-pv="rotR" title="Rotate +90° (R)"><i data-icon="rotate-cw"></i><kbd>R</kbd></button>
+      <button class="pv-btn" data-pv="mirror" id="pv-mirror" title="Mirror (M)"><i data-icon="flip-horizontal-2"></i><kbd>M</kbd></button>
+      <button class="pv-btn" data-pv="negative" id="pv-negative" title="Negative (N)"><i data-icon="contrast"></i><kbd>N</kbd></button>
+      <button class="pv-btn" data-pv="marker" id="pv-marker" title="Folder marker (A)"><i data-icon="flag"></i><kbd>A</kbd></button>
+    </div>
+
+    <div class="pv-group" role="group" aria-label="View">
+      <button class="icon-btn" data-pv="zoomOut" title="Zoom out (−, wheel)" aria-label="Zoom out"><i data-icon="zoom-out"></i></button>
+      <span class="pv-zoom" id="pv-zoom">Fit</span>
+      <button class="icon-btn" data-pv="zoomIn" title="Zoom in (+, wheel)" aria-label="Zoom in"><i data-icon="zoom-in"></i></button>
+      <button class="pv-btn" data-pv="fit" id="pv-fit" title="Fit to window (0 or Space)"><i data-icon="expand"></i>Fit</button>
+      <button class="pv-btn" data-pv="one" id="pv-one" title="1:1 pixels (1)">1:1</button>
+      <button class="pv-btn" data-pv="quality" id="pv-quality" title="Full quality: no downscaling (Q)">Full quality</button>
+      <button class="pv-btn" data-pv="topmost" id="pv-topmost" title="Always on top (T)"><i data-icon="pin"></i>On top</button>
+    </div>
+  </header>
+
+  <main class="pv-view" id="pv-view">
+    <img id="pv-img" alt="" draggable="false">
+    <div class="pv-msg" id="pv-msg"><span><span class="spinner"></span><span id="pv-msg-text">Building frame…</span></span></div>
+  </main>
+
+  <footer class="statusbar">
+    <span class="pv-path" id="pv-path"></span>
+    <span class="spacer"></span>
+    <span>Wheel: zoom · drag: pan · double-click: fit / 1:1 · Esc: close</span>
+  </footer>
+
+  <script type="module" src="js/preview.js"></script>
+</body>
+</html>

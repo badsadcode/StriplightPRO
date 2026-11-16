@@ -59,6 +59,13 @@ function toast(message, kind = '') {
 
 function status(text) { $('#status-main').textContent = text; }
 
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  view.refreshTheme();
+  scrubber.invalidate();
+  document.querySelector('#notes-editor .toastui-editor-defaultUI')?.classList.toggle('toastui-editor-dark', theme !== 'light');
+}
+
 function setBusy() {
   document.querySelector('.statusbar').classList.toggle('busy', state.detecting || state.exporting);
 }
@@ -230,10 +237,44 @@ async function frameCommand(cmd, extra = {}) {
   applyFrames(r);
 }
 
-async function deleteSelected() {
+/** Merge / combine / split: the host returns the frames to keep selected. */
+async function frameTool(cmd, extra = {}) {
+  const r = await run(cmd, { indices: selection(), ...extra });
+  applyFrames(r.frames, []);
+  view.setFrames(r.frames, r.select);
+  refreshFramesPanel();
+}
+
+async function undo() {
+  const r = await call('frames.undo').catch((e) => { toast(e.message); return null; });
+  if (!r) return;
+  applyFrames(r.frames, []);
+  status(`Undone · ${r.remaining} more step${r.remaining === 1 ? '' : 's'} available`);
+}
+
+/** F / G: jump to the next / previous folder marker (wraps around, like Lazarus). */
+function jumpMarker(forward) {
+  const frames = view.frames, n = frames.length;
+  if (!n) return;
+  const sel = selection();
+  let from = sel.length === 1 ? sel[0] : -1;
+  if (from < 0) {
+    // start from the current page
+    const first = view.firstStrip * state.session.roll.lengthLines;
+    from = frames.findIndex((f) => f.leadEdge >= first);
+    from = from < 0 ? n - 1 : forward ? from - 1 : from;
+  }
+  for (let k = 1; k <= n; k++) {
+    const i = (((forward ? from + k : from - k) % n) + n) % n;
+    if (frames[i].isMarker) { view.select(i); view.revealFrame(i); return; }
+  }
+  toast('No folder markers on this roll.');
+}
+
+async function deleteSelected(askConfirm = true) {
   const n = view.selected.size;
   if (!n) return;
-  if (n > 20 && !confirm(`Delete ${n} frames?`)) return;
+  if (askConfirm && n > 20 && !confirm(`Delete ${n} frames?`)) return;
   const r = await run('frames.delete', { indices: selection() });
   applyFrames(r, []);
   status(`Deleted ${n} frame${n === 1 ? '' : 's'}`);
@@ -298,6 +339,9 @@ function refreshFramesPanel() {
 
 function refreshPager() {
   const pages = view.pageCount;
+  // Auto mode and the fit-to-width limit change these behind the user's back: show the real values.
+  if (document.activeElement !== $('#strips-per-row')) $('#strips-per-row').value = view.stripsPerRow;
+  $('#zoom-out').textContent = `${Math.round(view.effectiveZoom * 100)}%`;
   $('#page-input').value = pages ? view.page + 1 : 1;
   $('#page-input').max = Math.max(1, pages);
   $('#page-count').textContent = `/ ${pages}`;
@@ -306,7 +350,8 @@ function refreshPager() {
 const sendView = debounce(async () => {
   const r = await call('view.set', {
     stripsPerRow: view.stripsPerRow, zoom: view.zoom,
-    rotateCw: $('#rotate-cw').checked, frameFillOpacity: view.fillOpacity,
+    rotateCw: $('#rotate-cw').checked, frameFillOpacity: view.fillOpacity, autoStrips: view.autoStrips,
+    showStripNumbers: view.showStripNumbers,
   }).catch((e) => toast(e.message, 'error'));
   if (r) { state.imageVersion = r.imageVersion; view.setImageVersion(r.imageVersion); }
 }, 200);
@@ -322,7 +367,16 @@ function setZoom(z) {
 
 $('#zoom').addEventListener('input', (e) => setZoom(e.target.value / 100));
 $('#strips-per-row').addEventListener('change', (e) => {
-  view.setView({ stripsPerRow: Number(e.target.value) || 4 });
+  $('#auto-strips').checked = false;
+  view.setView({ stripsPerRow: Number(e.target.value) || 4, autoStrips: false });
+  sendView();
+});
+$('#strip-numbers').addEventListener('change', (e) => {
+  view.setView({ showStripNumbers: e.target.checked });
+  sendView();
+});
+$('#auto-strips').addEventListener('change', (e) => {
+  view.setView({ autoStrips: e.target.checked });
   sendView();
 });
 $('#rotate-cw').addEventListener('change', () => {
@@ -590,50 +644,27 @@ function addFailure(frameIdx, error) {
   $('#exp-failures').append(li);
 }
 
-// ------------------------------------------------------------------ frame preview (lightbox)
+// ------------------------------------------------------------------ preview window
 
-let modalIdx = -1;
-let modalLoad = null;   // resolves when the current image has loaded or failed (used by the self-test)
-
-async function openFrameModal(idx) {
-  const f = view.frames[idx];
-  if (!f) return;
-  modalIdx = idx;
-  $('#frame-modal').hidden = false;
-  $('#frame-modal-title').textContent = `Frame ${idx + 1} of ${view.frames.length}${f.isMarker ? ' · folder start' : ''}`;
-  $('#frame-modal-size').textContent = `${f.trailEdge - f.leadEdge} × ${f.rightEdge - f.leftEdge}`;
-  $('#frame-modal-loading').hidden = false;
-  $('#frame-modal-loading span:last-child').textContent = 'Building frame…';
-  const img = $('#frame-modal-img');
-  img.hidden = true;
-  modalLoad = new Promise((resolve) => {
-    img.onload = () => { $('#frame-modal-loading').hidden = true; img.hidden = false; resolve(true); };
-    img.onerror = () => {
-      $('#frame-modal-loading span:last-child').textContent = 'Could not build this frame (missing strips or preview).';
-      resolve(false);
-    };
-  });
-  // Geometry is part of the URL so an edited frame is never served from the image cache.
-  img.src = `https://img.striplight/frame/${idx}?v=${state.imageVersion}&g=${frameKey(f)}:${f.rotation}:${f.hasOverride}`;
+/** Opens (or reuses) the separate preview window on a frame. */
+function openFrameModal(idx) {
+  if (!view.frames[idx]) return;
   view.select(idx);
-  view.revealFrame(idx);
-  const r = await call('export.preview', { ...gatherExport(), index: idx }).catch(() => null);
-  $('#frame-modal-path').textContent = r?.path ? `→ ${r.path}` : (r?.error || '');
+  call('preview.open', { index: idx }).catch((e) => toast(e.message, 'error'));
 }
 
-function closeFrameModal() {
-  $('#frame-modal').hidden = true;
-  $('#frame-modal-body').classList.remove('actual');
-  $('#frame-modal-zoom').textContent = 'Fit';
-  modalIdx = -1;
-  $('#strip-canvas').focus();
-}
+on('preview.selected', (d) => {
+  if (!view.frames[d.index]) return;
+  view.select(d.index);
+  view.revealFrame(d.index);
+});
 
-function toggleModalZoom() {
-  const actual = $('#frame-modal-body').classList.toggle('actual');
-  $('#frame-modal-zoom').textContent = actual ? '100%' : 'Fit';
-}
-$('#frame-modal-img').addEventListener('click', toggleModalZoom);
+// The preview window changed frames (orientation, marker): fetch the list again.
+on('frames.changed', async (d) => {
+  if (d?.source !== 'preview' || !hasRoll()) return;
+  const frames = await call('frames.list').catch(() => null);
+  if (frames) applyFrames(frames);
+});
 
 // ------------------------------------------------------------------ context menu
 
@@ -688,6 +719,20 @@ const commands = {
   selectNone: () => view.selectNone(),
   nextAbnormal,
   toggleMarker: () => frameCommand('frames.toggleMarker'),
+  merge: () => frameTool('frames.merge'),
+  combine: () => frameTool('frames.combine'),
+  split: () => frameTool('frames.split', { parts: Number($('#split-parts').value) || 2 }),
+  toggleSuggested: () => {
+    const sel = selection();
+    if (sel.length !== 1) { toast('Select exactly one frame to toggle its suggestion.'); return; }
+    return frameCommand('frames.toggleSuggested', { index: sel[0] });
+  },
+  undo,
+  theme: async () => {
+    const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+    applyTheme(next);
+    await call('app.setTheme', { theme: next }).catch(() => {});
+  },
   previewFrame: () => { const i = selection()[0]; if (i !== undefined) openFrameModal(i); },
   deleteSelected,
   clearMarkers: async () => {
@@ -719,15 +764,6 @@ const commands = {
     $('#exp-pause span').textContent = state.exportPaused ? 'Resume' : 'Pause';
   },
   exportStop: () => call('export.cancel'),
-  modalPrev: () => modalIdx > 0 && openFrameModal(modalIdx - 1),
-  modalNext: () => modalIdx < view.frames.length - 1 && openFrameModal(modalIdx + 1),
-  modalMarker: async () => {
-    const idx = modalIdx;
-    await frameCommand('frames.toggleMarker');
-    openFrameModal(idx);
-  },
-  modalZoom: toggleModalZoom,
-  modalClose: closeFrameModal,
   shortcuts: () => { $('#shortcuts-modal').hidden = false; },
   shortcutsClose: () => { $('#shortcuts-modal').hidden = true; },
 };
@@ -748,47 +784,54 @@ function typing(e) {
 
 document.addEventListener('keydown', (e) => {
   const ctrl = e.ctrlKey || e.metaKey;
-  if (ctrl && e.key.toLowerCase() === 'o') { e.preventDefault(); commands.open(); return; }
-  if (ctrl && e.key.toLowerCase() === 's') { e.preventDefault(); save(e.shiftKey); return; }
+  const k = e.key.toLowerCase();
+  if (ctrl && k === 'o') { e.preventDefault(); commands.open(); return; }
+  if (ctrl && k === 's') { e.preventDefault(); save(e.shiftKey); return; }
 
   if (!$('#shortcuts-modal').hidden) {
     if (e.key === 'Escape' || e.key === '?') commands.shortcutsClose();
-    return;
-  }
-  if (!$('#frame-modal').hidden) {
-    const k = e.key.toLowerCase();
-    if (k === 'escape') closeFrameModal();
-    else if (k === 'arrowleft') commands.modalPrev();
-    else if (k === 'arrowright') commands.modalNext();
-    else if (k === 'm') commands.modalMarker();
-    else if (k === 'z') toggleModalZoom();
     return;
   }
   if (typing(e)) return;
   if (e.key === '?') { commands.shortcuts(); return; }
   if (!hasRoll()) return;
 
-  switch (e.key) {
-    case 'Escape': if (!view.cancelDrag()) view.selectNone(); hideContextMenu(); break;
-    case 'Delete': deleteSelected(); break;
-    case 'm': case 'M': if (view.selected.size) frameCommand('frames.toggleMarker'); break;
-    case 'Enter': commands.previewFrame(); break;
-    case 'PageDown': commands.next(); break;
-    case 'PageUp': commands.prev(); break;
-    case 'Home': commands.first(); break;
-    case 'End': commands.last(); break;
-    case '+': case '=': commands.zoomIn(); break;
-    case '-': commands.zoomOut(); break;
-    case 'a': case 'A': if (ctrl) { e.preventDefault(); view.selectAll(); } else return; break;
-    default: return;
+  // Shortcuts follow the Lazarus edition (A marker, D delete, X/C pages, F/G markers, E/J/S, Z, Ctrl+Z/A/D).
+  if (ctrl) {
+    const fn = { z: undo, a: () => view.selectAll(), d: () => view.selectNone() }[k];
+    if (fn) { e.preventDefault(); fn(); }
+    return;
   }
-  e.preventDefault();
+  if (e.altKey) return;
+  const sel = view.selected.size > 0;
+  const map = {
+    escape: () => { if (!view.cancelDrag()) view.selectNone(); hideContextMenu(); },
+    delete: () => deleteSelected(true),
+    d: () => sel && deleteSelected(false),
+    a: () => sel && frameCommand('frames.toggleMarker'),
+    m: () => sel && frameCommand('frames.toggleMarker'),
+    e: () => sel && commands.merge(),
+    j: () => sel && commands.combine(),
+    s: () => sel && commands.split(),
+    z: () => commands.toggleSuggested(),
+    f: () => jumpMarker(true),
+    g: () => jumpMarker(false),
+    enter: () => commands.previewFrame(),
+    c: commands.next, pagedown: commands.next,
+    x: commands.prev, pageup: commands.prev,
+    home: commands.first, end: commands.last,
+    '+': commands.zoomIn, '=': commands.zoomIn, '-': commands.zoomOut,
+  };
+  const fn = map[k];
+  if (fn) { e.preventDefault(); fn(); }
 });
 
 // ------------------------------------------------------------------ host events
 
 on('project.dirty', setDirty);
 on('toast', (m) => toast(m));
+on('theme.changed', (d) => { if (document.documentElement.dataset.theme !== d.theme) applyTheme(d.theme); });
+on('preview.closed', () => $('#strip-canvas').focus());
 
 // ------------------------------------------------------------------ smoke self-test (CI only)
 
@@ -803,10 +846,14 @@ window.__striplightSelfTest = async () => {
     await sleep(400);
     result.notesEditor = !!document.querySelector('#notes-editor .toastui-editor-defaultUI');
     showTab('frames');
-    view.select(Math.min(2, view.frames.length - 1));
-    await openFrameModal(Math.min(2, view.frames.length - 1));
-    result.framePreviewLoaded = await Promise.race([modalLoad, sleep(20000).then(() => false)]);
-    result.ok = result.frames > 0 && result.stripImagesLoaded > 0 && result.notesEditor && result.framePreviewLoaded;
+    // The preview window reports back when its image has loaded.
+    const loaded = new Promise((resolve) => on('preview.loaded', (d) => resolve(d.ok)));
+    openFrameModal(Math.min(2, view.frames.length - 1));
+    result.previewWindowLoaded = await Promise.race([loaded, sleep(25000).then(() => false)]);
+    // Light theme renders without errors too.
+    applyTheme('light');
+    await sleep(300);
+    result.ok = result.frames > 0 && result.stripImagesLoaded > 0 && result.notesEditor && result.previewWindowLoaded;
   } catch (err) {
     result.error = String(err);
   }
@@ -814,7 +861,8 @@ window.__striplightSelfTest = async () => {
 };
 
 window.__striplightSelfTestCleanup = () => {
-  closeFrameModal();
+  applyTheme('dark');
+  call('preview.close').catch(() => {});
   showTab('process');
 };
 
@@ -839,7 +887,10 @@ async function init() {
   $('#zoom').value = Math.round(s.zoom * 100);
   paintRange($('#zoom'));
   $('#zoom-out').textContent = `${Math.round(s.zoom * 100)}%`;
-  view.setView({ stripsPerRow: s.stripsPerRow, zoom: s.zoom, fillOpacity: s.frameFillOpacity, rotateCw: s.rotateCw });
+  $('#auto-strips').checked = s.autoStrips;
+  $('#strip-numbers').checked = s.showStripNumbers;
+  applyTheme(s.theme || 'dark');
+  view.setView({ stripsPerRow: s.stripsPerRow, zoom: s.zoom, fillOpacity: s.frameFillOpacity, rotateCw: s.rotateCw, autoStrips: s.autoStrips, showStripNumbers: s.showStripNumbers });
   applyRanges(0, true);
   renderRecent();
   if (info.session) applySession(info.session);

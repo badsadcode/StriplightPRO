@@ -37,6 +37,9 @@ export class StripView {
     this.zoom = 1;
     this.fillOpacity = 35;
     this.rotateCw = false;        // false: strips turned CCW (default), true: CW + mirror
+    this.autoStrips = false;      // fit as many strips per row as the canvas allows
+    this.showStripNumbers = false;
+    this.refreshTheme();
     this.imageVersion = 1;
     this.images = new Map();      // stripIdx -> { img, version, state }
     this.segments = [];           // hit-test rectangles of the frames drawn on this page
@@ -80,8 +83,10 @@ export class StripView {
     this.invalidate();
   }
 
-  setView({ stripsPerRow, zoom, fillOpacity, rotateCw }) {
+  setView({ stripsPerRow, zoom, fillOpacity, rotateCw, autoStrips, showStripNumbers }) {
     if (rotateCw !== undefined) this.rotateCw = !!rotateCw;
+    if (autoStrips !== undefined) this.autoStrips = !!autoStrips;
+    if (showStripNumbers !== undefined) this.showStripNumbers = !!showStripNumbers;
     if (stripsPerRow) this.stripsPerRow = Math.max(1, Math.min(20, stripsPerRow));
     if (zoom) this.zoom = Math.max(0.25, Math.min(4, zoom));
     if (fillOpacity !== undefined) this.fillOpacity = fillOpacity;
@@ -92,6 +97,20 @@ export class StripView {
     this.invalidate();
     this.cb.onPageChanged?.();
   }
+
+  /** Re-reads the theme colours used on the canvas (after a theme switch). */
+  refreshTheme() {
+    const c = getComputedStyle(document.documentElement);
+    this.theme = {
+      plate: c.getPropertyValue('--plate').trim() || '#16181c',
+      plateEmpty: c.getPropertyValue('--plate-empty').trim() || '#1b1e23',
+      plateShadow: c.getPropertyValue('--plate-shadow').trim() || 'rgba(0,0,0,.55)',
+    };
+    this.invalidate?.();
+  }
+
+  /** Zoom actually shown (strips are capped so a row fits the canvas). */
+  get effectiveZoom() { return this.stripW ? this.stripW / BASE_STRIP_W : this.zoom; }
 
   setImageVersion(v) {
     if (v === this.imageVersion) return;
@@ -117,8 +136,11 @@ export class StripView {
 
   layout() {
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
-    // Zoomed strip width, but never wider than the canvas allows (small screens).
-    this.stripW = Math.max(24, Math.min(Math.round(BASE_STRIP_W * this.zoom), Math.floor((w - 32) / this.stripsPerRow)));
+    const wanted = Math.round(BASE_STRIP_W * this.zoom);
+    // Auto: as many strips per row as fit at this zoom (the Lazarus "auto strips" option).
+    if (this.autoStrips) this.stripsPerRow = Math.max(1, Math.min(20, Math.floor((w - 32) / Math.max(24, wanted))));
+    // Zoomed strip width, but never wider than the canvas allows.
+    this.stripW = Math.max(24, Math.min(wanted, Math.floor((w - 32) / this.stripsPerRow)));
     const r = this.roll;
     if (r && r.widthPixels > 0 && r.lengthLines > 0) {
       const ds = Math.max(1, r.previewDownScale);
@@ -255,10 +277,10 @@ export class StripView {
     const cols = Math.min(this.stripsPerRow, this.pageStripCount);
     const plate = { x: this.originX - 6, y: this.originY - 6, w: cols * this.stripW + 12, h: rows * this.stripH + 12 };
     ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.55)';
+    ctx.shadowColor = this.theme.plateShadow;
     ctx.shadowBlur = 30;
     ctx.shadowOffsetY = 10;
-    ctx.fillStyle = '#16181c';
+    ctx.fillStyle = this.theme.plate;
     ctx.beginPath();
     ctx.roundRect(plate.x, plate.y, plate.w, plate.h, 10);
     ctx.fill();
@@ -274,7 +296,7 @@ export class StripView {
       if (e.state === 'ok') ctx.drawImage(e.img, r.x, r.y, r.w, r.h);
       else if (e.stale) ctx.drawImage(e.stale, r.x, r.y, r.w, r.h);
       else {
-        ctx.fillStyle = '#1b1e23';
+        ctx.fillStyle = this.theme.plateEmpty;
         ctx.fillRect(r.x, r.y, r.w, r.h);
         if (e.state === 'missing') this.label(r, 'No preview', '#6c727d');
       }
@@ -283,7 +305,7 @@ export class StripView {
       ctx.strokeStyle = 'rgba(255,255,255,.05)';
       ctx.lineWidth = 1;
       ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-      this.pill(String(strip + 1), r.x + 5, r.y + r.h - 22, 'rgba(10,11,13,.72)', '#a4a9b4');
+      if (this.showStripNumbers) this.pill(String(strip + 1), r.x + 5, r.y + r.h - 22, 'rgba(10,11,13,.72)', '#a4a9b4');
     }
 
     this.drawFrames();

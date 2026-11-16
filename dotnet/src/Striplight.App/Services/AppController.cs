@@ -20,9 +20,13 @@ namespace Striplight.App.Services;
 /// </summary>
 public sealed class AppController
 {
+    private const int UndoSteps = 25; // as in the Lazarus edition
+
     private readonly Window _owner;
     private readonly BridgeHost _bridge;
+    private readonly IWindowHost _host;
     private readonly AppSettings _settings = AppSettings.Load();
+    private readonly List<List<FrameRecord>> _undo = [];
 
     private Project _project = new();
     private string _projectPath = "";
@@ -36,12 +40,15 @@ public sealed class AppController
     private CancellationTokenSource? _exportCts;
     private ExportEngine? _exportEngine;
 
-    public AppController(Window owner, BridgeHost bridge)
+    public AppController(Window owner, BridgeHost bridge, IWindowHost host)
     {
         _owner = owner;
         _bridge = bridge;
+        _host = host;
         Register();
     }
+
+    public AppSettings Settings => _settings;
 
     // ------------------------------------------------------------ smoke test hooks
 
@@ -104,55 +111,126 @@ public sealed class AppController
 
         _bridge.On("frames.patch", args =>
         {
+            PushUndo();
             foreach (var p in BridgeHost.Arg(args, "changes", new List<FramePatch>()))
                 if (p.Index >= 0 && p.Index < _project.Frames.Count && p.Frame.IsPersistable)
                     CopyEditable(p.Frame, _project.Frames[p.Index]);
             FrameEditor.Refresh(_project.Frames); // a drag can change the order
-            return MarkDirtyAndReturnFrames();
+            return Changed(args);
         });
         _bridge.On("frames.add", args =>
         {
             var f = BridgeHost.Arg(args, "frame", new FrameRecord());
+            PushUndo();
             int idx = FrameEditor.Add(_project.Frames, f);
-            MarkDirty();
+            Changed(args);
             return new { frames = _project.Frames, index = idx };
         });
         _bridge.On("frames.delete", args =>
         {
+            PushUndo();
             FrameEditor.Delete(_project.Frames, Indices(args));
-            return MarkDirtyAndReturnFrames();
+            return Changed(args);
         });
         _bridge.On("frames.toggleMarker", args =>
         {
+            PushUndo();
             FrameEditor.ToggleMarker(_project.Frames, Indices(args));
-            return MarkDirtyAndReturnFrames();
+            return Changed(args);
         });
-        _bridge.On("frames.clearMarkers", _ =>
+        _bridge.On("frames.clearMarkers", args =>
         {
+            PushUndo();
             FrameEditor.ClearMarkers(_project.Frames);
-            return MarkDirtyAndReturnFrames();
+            return Changed(args);
         });
         _bridge.On("frames.clearOverrides", args =>
         {
+            PushUndo();
             FrameEditor.ClearOverrides(_project.Frames, Indices(args));
-            return MarkDirtyAndReturnFrames();
+            return Changed(args);
         });
         _bridge.On("frames.setOverride", args =>
         {
             int rotation = BridgeHost.Arg(args, "rotation", 0);
             bool flipH = BridgeHost.Arg(args, "flipH", false), negative = BridgeHost.Arg(args, "negative", false);
+            PushUndo();
             foreach (int i in Indices(args))
             {
                 if (i < 0 || i >= _project.Frames.Count) continue;
                 var f = _project.Frames[i];
                 f.HasOverride = true; f.Rotation = rotation; f.FlipH = flipH; f.FlipV = false; f.Negative = negative;
             }
-            return MarkDirtyAndReturnFrames();
+            return Changed(args);
         });
         _bridge.On("frames.clearExported", _ =>
         {
             foreach (var f in _project.Frames) f.IsExported = false;
             return _project.Frames;
+        });
+        _bridge.On("frames.list", _ => _project.Frames);
+
+        // Lazarus frame tools: E merge pairs, J combine overlapping, S split, Z suggested, Ctrl+Z undo.
+        _bridge.On("frames.merge", args => WithSelection(args, () => FrameEditor.MergePairs(_project.Frames, Indices(args))));
+        _bridge.On("frames.combine", args => WithSelection(args, () => FrameEditor.CombineOverlapping(_project.Frames, Indices(args))));
+        _bridge.On("frames.split", args => WithSelection(args,
+            () => FrameEditor.Split(_project.Frames, Indices(args), Math.Clamp(BridgeHost.Arg(args, "parts", 2), 2, 20))));
+        _bridge.On("frames.toggleSuggested", args =>
+        {
+            PushUndo();
+            FrameEditor.ToggleSuggested(_project.Frames, BridgeHost.Arg(args, "index", -1));
+            return Changed(args);
+        });
+        _bridge.On("frames.undo", args =>
+        {
+            if (_undo.Count == 0) throw new BridgeException("Nothing to undo.");
+            _project.Frames = _undo[^1];
+            _undo.RemoveAt(_undo.Count - 1);
+            FrameEditor.Refresh(_project.Frames);
+            Changed(args);
+            return new { frames = _project.Frames, remaining = _undo.Count };
+        });
+
+        // Separate preview window
+        _bridge.On("preview.open", args => { _host.OpenPreview(BridgeHost.Arg(args, "index", 0)); return null; });
+        _bridge.On("preview.close", _ => { _host.ClosePreview(); return null; });
+        _bridge.On("preview.frame", args => PreviewFrameInfo(BridgeHost.Arg(args, "index", 0)));
+        _bridge.On("preview.select", args => { _bridge.Emit("preview.selected", new { index = BridgeHost.Arg(args, "index", 0) }); return null; });
+        _bridge.On("preview.loaded", args => { _bridge.Emit("preview.loaded", args.Clone()); return null; });
+        _bridge.On("preview.settings", args =>
+        {
+            _settings.PreviewTopmost = BridgeHost.Arg(args, "topmost", _settings.PreviewTopmost);
+            _settings.PreviewStep = Math.Clamp(BridgeHost.Arg(args, "step", _settings.PreviewStep), 1, 1000);
+            _settings.PreviewFullQuality = BridgeHost.Arg(args, "fullQuality", _settings.PreviewFullQuality);
+            _host.SetPreviewTopmost(_settings.PreviewTopmost);
+            return null;
+        });
+        _bridge.On("preview.orient", args =>
+        {
+            // Per-frame orientation from the preview: R / Rot -90, M mirror, N negative.
+            int i = BridgeHost.Arg(args, "index", -1);
+            if (i < 0 || i >= _project.Frames.Count) return null;
+            PushUndo();
+            var f = _project.Frames[i];
+            if (!f.HasOverride)
+            {
+                // Start from the global settings so the first click changes only one thing.
+                f.HasOverride = true; f.Rotation = _process.Rotation; f.FlipH = _process.Mirror; f.FlipV = false; f.Negative = _process.Negative;
+            }
+            f.Rotation = (((f.Rotation + BridgeHost.Arg(args, "rotate", 0)) % 360) + 360) % 360;
+            if (BridgeHost.Arg(args, "mirror", false)) f.FlipH = !f.FlipH;
+            if (BridgeHost.Arg(args, "negative", false)) f.Negative = !f.Negative;
+            Changed(args);
+            return PreviewFrameInfo(i);
+        });
+
+        _bridge.On("app.setTheme", args =>
+        {
+            _settings.Theme = BridgeHost.Arg(args, "theme", "dark") == "light" ? "light" : "dark";
+            _host.ApplyTheme(_settings.Theme == "dark");
+            _bridge.Emit("theme.changed", new { theme = _settings.Theme });
+            _settings.Save();
+            return null;
         });
 
         _bridge.On("process.set", args =>
@@ -170,6 +248,8 @@ public sealed class AppController
             _settings.StripsPerRow = Math.Clamp(BridgeHost.Arg(args, "stripsPerRow", _settings.StripsPerRow), 1, 20);
             _settings.Zoom = Math.Clamp(BridgeHost.Arg(args, "zoom", _settings.Zoom), 0.25, 4.0);
             _settings.FrameFillOpacity = Math.Clamp(BridgeHost.Arg(args, "frameFillOpacity", _settings.FrameFillOpacity), 0, 100);
+            _settings.AutoStrips = BridgeHost.Arg(args, "autoStrips", _settings.AutoStrips);
+            _settings.ShowStripNumbers = BridgeHost.Arg(args, "showStripNumbers", _settings.ShowStripNumbers);
             return new { imageVersion = _imageVersion };
         });
         _bridge.On("notes.set", args =>
@@ -222,10 +302,54 @@ public sealed class AppController
         _bridge.Emit("project.dirty", true);
     }
 
-    private object MarkDirtyAndReturnFrames()
+    /// <summary>
+    /// After any frame edit: mark dirty and tell every page (the other window refreshes),
+    /// then hand the new list to the page that asked.
+    /// </summary>
+    private object Changed(JsonElement args)
     {
         MarkDirty();
+        _bridge.Emit("frames.changed", new { source = BridgeHost.Arg(args, "source", "main") });
         return _project.Frames;
+    }
+
+    private object WithSelection(JsonElement args, Func<List<FrameRecord>> edit)
+    {
+        PushUndo();
+        var keep = edit();
+        Changed(args);
+        return new { frames = _project.Frames, select = keep.Select(f => _project.Frames.IndexOf(f)).Where(i => i >= 0).ToList() };
+    }
+
+    private void PushUndo()
+    {
+        _undo.Add(_project.Frames.Select(f => f.Clone()).ToList());
+        if (_undo.Count > UndoSteps) _undo.RemoveAt(0);
+    }
+
+    /// <summary>Everything the preview window shows about one frame.</summary>
+    private object? PreviewFrameInfo(int index)
+    {
+        var frames = _project.Frames;
+        if (!_project.Roll.Loaded || frames.Count == 0) return null;
+        index = Math.Clamp(index, 0, frames.Count - 1);
+        var f = frames[index];
+        var p = FrameBuilder.Resolve(f, _process.ToProcessSettings(_settings.RotateCw));
+        bool quarter = p.Rotation is 90 or 270;
+        string path = "", pathError = "";
+        try { path = ExportNaming.PathForFrame(frames, index, _export.ToNaming(ExportNaming.DefaultOutputRoot(ProjectRootPath, _project.Roll))).FullPath; }
+        catch (InvalidOperationException e) { pathError = e.Message; }
+        var (volume, fileNo) = ExportNaming.VolumeAndFile(frames, index);
+        return new
+        {
+            index, count = frames.Count, frame = f, volume, fileNo, path, pathError,
+            prevMarker = FrameEditor.FindMarker(frames, index, forward: false),
+            nextMarker = FrameEditor.FindMarker(frames, index, forward: true),
+            width = quarter ? f.Width : (int)f.Height, height = quarter ? (int)f.Height : f.Width,
+            rotation = p.Rotation, mirror = p.FlipH, negative = p.Negative, ownOrientation = f.HasOverride,
+            imageVersion = _imageVersion,
+            settings = new { topmost = _settings.PreviewTopmost, step = _settings.PreviewStep, fullQuality = _settings.PreviewFullQuality, theme = _settings.Theme },
+        };
     }
 
     private SessionDto Session() => new(
@@ -296,6 +420,7 @@ public sealed class AppController
         FrameEditor.Refresh(project.Frames);
 
         _project = project;
+        _undo.Clear();
         _projectPath = projectPath;
         _idfPath = idfPath;
         _dirty = false;
@@ -456,8 +581,10 @@ public sealed class AppController
                     return File.Exists(p) ? TurboJpeg.DecodeFile(p, TurboJpeg.PixelFormatBgra) : null;
                 },
                 progress, _detectCts.Token));
+            PushUndo();
             FrameEditor.ReplaceDetectedRange(_project.Frames, found, options.StripFrom, options.StripTo, roll.LengthLines);
             MarkDirty();
+            _bridge.Emit("frames.changed", new { source = "main" });
             return new { frames = _project.Frames, found = found.Count };
         }
         catch (OperationCanceledException)

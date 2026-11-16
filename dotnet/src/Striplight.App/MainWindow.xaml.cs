@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
@@ -9,30 +8,39 @@ using Striplight.App.Services;
 
 namespace Striplight.App;
 
+/// <summary>What the controller needs from the window layer.</summary>
+public interface IWindowHost
+{
+    void OpenPreview(int index);
+    void ClosePreview();
+    void SetPreviewTopmost(bool value);
+    void ApplyTheme(bool dark);
+    PreviewWindow? Preview { get; }
+}
+
 /// <summary>
-/// Hosts the WebView2 front end. Three channels connect it to .NET:
+/// Hosts the main WebView2 page. Three channels connect pages to .NET:
 ///  * https://app.striplight/  — static files from wwwroot (virtual host mapping)
 ///  * https://img.striplight/  — strip and frame images rendered on demand by Striplight.Core
 ///  * chrome.webview.postMessage — JSON commands/replies/events (see Bridge/BridgeHost.cs)
+/// The frame preview is a second window on the same bridge (PreviewWindow).
 /// </summary>
-public partial class MainWindow : Window
+public partial class MainWindow : Window, IWindowHost
 {
-    public const string AppHost = "app.striplight";
-    public const string ImageHost = "img.striplight";
-
     private readonly BridgeHost _bridge = new();
     private readonly AppController _controller;
     private readonly ImageService _images;
     private readonly SmokeTest? _smoke;
+    private PreviewWindow? _preview;
     private bool _closeConfirmed;
 
     public MainWindow()
     {
         InitializeComponent();
         _smoke = SmokeTest.FromArgs(Environment.GetCommandLineArgs());
-        _controller = new AppController(this, _bridge) { SmokeMode = _smoke is not null };
+        _controller = new AppController(this, _bridge, this) { SmokeMode = _smoke is not null };
         _images = new ImageService(_controller);
-        SourceInitialized += (_, _) => DarkTitleBar.Apply(new WindowInteropHelper(this).Handle);
+        SourceInitialized += (_, _) => DarkTitleBar.Apply(new WindowInteropHelper(this).Handle, _controller.Settings.Theme != "light");
         Loaded += async (_, _) => await InitWebViewAsync();
         Closing += OnClosing;
     }
@@ -41,56 +49,21 @@ public partial class MainWindow : Window
     {
         try
         {
-            string userData = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "StriplightPRO", "WebView2");
-            var env = await CoreWebView2Environment.CreateAsync(null, userData);
+            var env = await WebViewSetup.EnvironmentAsync();
             await Web.EnsureCoreWebView2Async(env);
-            Web.DefaultBackgroundColor = System.Drawing.Color.FromArgb(255, 0x0E, 0x0F, 0x12);
-
-            var core = Web.CoreWebView2;
-            core.Settings.IsStatusBarEnabled = false;
-            core.Settings.IsZoomControlEnabled = false;
-            core.Settings.AreBrowserAcceleratorKeysEnabled = false; // F5/Ctrl+R would reload and drop state
-#if DEBUG
-            core.Settings.AreDevToolsEnabled = true;
-#else
-            core.Settings.AreDevToolsEnabled = false;
-            core.Settings.AreDefaultContextMenusEnabled = false;
-#endif
-            string wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
-            core.SetVirtualHostNameToFolderMapping(AppHost, wwwroot, CoreWebView2HostResourceAccessKind.Deny);
-
-            core.AddWebResourceRequestedFilter($"https://{ImageHost}/*", CoreWebView2WebResourceContext.All);
-            core.WebResourceRequested += (s, e) => _images.Handle(core.Environment, e);
-
-            core.WebMessageReceived += async (_, e) =>
-            {
-                string reply = await _bridge.HandleAsync(e.WebMessageAsJson);
-                core.PostWebMessageAsJson(reply);
-            };
-            _bridge.Outgoing += json => Dispatcher.Invoke(() => core.PostWebMessageAsJson(json));
-
-            // Keep navigation inside the app; open anything else in the default browser.
-            core.NewWindowRequested += (_, e) => { e.Handled = true; Shell.OpenUrl(e.Uri); };
-            core.NavigationStarting += (_, e) =>
-            {
-                if (!e.Uri.StartsWith($"https://{AppHost}/", StringComparison.OrdinalIgnoreCase))
-                {
-                    e.Cancel = true;
-                    Shell.OpenUrl(e.Uri);
-                }
-            };
+            Web.DefaultBackgroundColor = WebBackground(_controller.Settings.Theme != "light");
+            WebViewSetup.Configure(Web.CoreWebView2, _bridge, _images, Dispatcher);
 
             if (_smoke is not null)
             {
+                var core = Web.CoreWebView2;
                 _bridge.On("app.ready", _ =>
                 {
-                    Dispatcher.InvokeAsync(() => _smoke.RunAsync(this, core, _controller));
+                    Dispatcher.InvokeAsync(() => _smoke.RunAsync(this, core, _controller, this));
                     return null;
                 });
             }
-
-            Web.Source = new Uri($"https://{AppHost}/index.html");
+            Web.Source = new Uri($"https://{WebViewSetup.AppHost}/index.html");
         }
         catch (Exception ex) when (ex is WebView2RuntimeNotFoundException or COMException or InvalidOperationException)
         {
@@ -103,20 +76,60 @@ public partial class MainWindow : Window
         }
     }
 
+    private static System.Drawing.Color WebBackground(bool dark) => dark
+        ? System.Drawing.Color.FromArgb(255, 0x0E, 0x0F, 0x12)
+        : System.Drawing.Color.FromArgb(255, 0xF5, 0xF6, 0xF8);
+
+    // ------------------------------------------------------------ IWindowHost
+
+    public PreviewWindow? Preview => _preview;
+
+    public void OpenPreview(int index)
+    {
+        if (_preview is not null)
+        {
+            _preview.ShowFrame(index);
+            return;
+        }
+        _preview = new PreviewWindow(_bridge, _images, _controller.Settings, index);
+        _preview.Closed += (_, _) =>
+        {
+            _preview = null;
+            _bridge.Emit("preview.closed", null);
+            Activate();
+        };
+        _preview.Show();
+    }
+
+    public void ClosePreview() => _preview?.Close();
+
+    public void SetPreviewTopmost(bool value)
+    {
+        if (_preview is not null) _preview.Topmost = value;
+    }
+
+    public void ApplyTheme(bool dark)
+    {
+        DarkTitleBar.Apply(new WindowInteropHelper(this).Handle, dark);
+        if (Web.CoreWebView2 is not null) Web.DefaultBackgroundColor = WebBackground(dark);
+        _preview?.ApplyTheme(dark);
+    }
+
     private void OnClosing(object? sender, CancelEventArgs e)
     {
-        if (_closeConfirmed || _smoke is not null) return;
+        if (_closeConfirmed || _smoke is not null) { _preview?.Close(); return; }
         if (!_controller.ConfirmDiscardOrSave("closing Striplight PRO"))
         {
             e.Cancel = true;
             return;
         }
+        _preview?.Close();
         _controller.Shutdown();
         _closeConfirmed = true;
     }
 }
 
-/// <summary>Dark, app-coloured native title bar (Windows 10 20H1+ dark mode, Windows 11 caption colour).</summary>
+/// <summary>Native title bar coloured to match the app theme (Windows 10 20H1+ dark mode, Windows 11 caption colour).</summary>
 internal static class DarkTitleBar
 {
     [DllImport("dwmapi.dll")]
@@ -128,14 +141,16 @@ internal static class DarkTitleBar
     private const int DWMWA_CAPTION_COLOR = 35;
     private const int DWMWA_TEXT_COLOR = 36;
 
-    public static void Apply(IntPtr hwnd)
+    public static void Apply(IntPtr hwnd, bool dark)
     {
+        if (hwnd == IntPtr.Zero) return;
         // Each call fails harmlessly on Windows versions that do not know the attribute.
-        int on = 1, round = 2;
-        int caption = 0x00120F0E; // COLORREF 0x00BBGGRR = #0E0F12, the app background
-        int border = 0x00221E1C;
-        int text = 0x00E6E8EC;
-        DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref on, sizeof(int));
+        // Colours are COLORREF 0x00BBGGRR: dark #0E0F12 / light #F5F6F8, the app backgrounds.
+        int mode = dark ? 1 : 0, round = 2;
+        int caption = dark ? 0x00120F0E : 0x00F8F6F5;
+        int border = dark ? 0x00221E1C : 0x00E2DED9;
+        int text = dark ? 0x00ECE8E6 : 0x001D1815;
+        DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref mode, sizeof(int));
         DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref round, sizeof(int));
         DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, ref caption, sizeof(int));
         DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, ref border, sizeof(int));

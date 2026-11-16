@@ -260,3 +260,54 @@ public class DemoRollTests
         Assert.Equal(frames[3].Height, img.Width);
     }
 }
+
+public class FrameToolTests
+{
+    private static List<FrameRecord> Row(int n) =>
+        Enumerable.Range(0, n).Select(i => new FrameRecord { Index = i, LeadEdge = i * 100, TrailEdge = i * 100 + 90, LeftEdge = 10 + i, RightEdge = 50 }).ToList();
+
+    [Fact]
+    public void MergePairsJoinsFirstWithSecond()
+    {
+        var f = Row(5);
+        var keep = FrameEditor.MergePairs(f, [0, 1, 3, 4]);
+        Assert.Equal(3, f.Count);
+        Assert.Equal((0L, 190L, 10), (f[0].LeadEdge, f[0].TrailEdge, f[0].LeftEdge));
+        Assert.Equal(2, keep.Count);
+    }
+
+    [Fact]
+    public void CombineOnlyMergesOverlapping()
+    {
+        var f = Row(3);
+        f[1].LeadEdge = 50; // overlaps frame 0
+        var keep = FrameEditor.CombineOverlapping(f, [0, 1, 2]);
+        Assert.Equal(2, f.Count);
+        Assert.Equal(190, f[0].TrailEdge);
+        Assert.Equal(2, keep.Count);
+    }
+
+    [Fact]
+    public void SplitMakesEqualParts()
+    {
+        var f = Row(2);
+        f[0].IsMarker = true;
+        var parts = FrameEditor.Split(f, [0], 3);
+        Assert.Equal(4, f.Count);
+        Assert.Equal(new long[] { 0, 30, 60 }, f.Take(3).Select(x => x.LeadEdge));
+        Assert.Equal(90, f[2].TrailEdge);
+        Assert.True(f[0].IsMarker);
+        Assert.False(f[1].IsMarker);
+        Assert.Equal(3, parts.Count);
+    }
+
+    [Fact]
+    public void FindMarkerWraps()
+    {
+        var f = Row(5);
+        f[1].IsMarker = true;
+        Assert.Equal(1, FrameEditor.FindMarker(f, 3, forward: true));
+        Assert.Equal(1, FrameEditor.FindMarker(f, 0, forward: false));
+        Assert.Equal(-1, FrameEditor.FindMarker(Row(2), 0, true));
+    }
+}

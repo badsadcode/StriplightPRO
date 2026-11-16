@@ -26,6 +26,7 @@
       <button class="btn btn-ghost" data-cmd="open" title="Open roll (Ctrl+O)"><i data-icon="folder-open"></i><span>Open</span></button>
       <button class="btn btn-ghost" data-cmd="saveAs" data-needs-roll title="Save as SLF or QPF (Ctrl+Shift+S)"><i data-icon="save-all"></i><span>Save as</span></button>
       <button class="btn btn-primary" data-cmd="save" data-needs-roll title="Save project (Ctrl+S)"><i data-icon="save"></i><span>Save</span></button>
+      <button class="icon-btn theme-toggle" data-cmd="theme" title="Switch light / dark theme" aria-label="Switch theme"><span class="icon-moon"><i data-icon="moon" data-size="18"></i></span><span class="icon-sun"><i data-icon="sun" data-size="18"></i></span></button>
       <button class="icon-btn" data-cmd="shortcuts" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><i data-icon="keyboard" data-size="18"></i></button>
     </div>
   </header>
@@ -65,6 +66,12 @@
         <span class="vb-sep"></span>
         <label class="vb-field" title="Strips per row"><i data-icon="columns-3"></i>
           <input id="strips-per-row" type="number" min="1" max="20" value="4" aria-label="Strips per row">
+        </label>
+        <label class="vb-toggle" title="Auto: fit as many strips per row as the window allows">
+          <input id="auto-strips" type="checkbox"><span>Auto</span>
+        </label>
+        <label class="vb-toggle" title="Show strip numbers">
+          <input id="strip-numbers" type="checkbox"><span>#</span>
         </label>
         <label class="vb-toggle" title="Source orientation: clockwise + mirror instead of counter-clockwise">
           <input id="rotate-cw" type="checkbox"><i data-icon="rotate-cw"></i><span>CW</span>
@@ -135,10 +142,18 @@
         <div class="section">
           <h3>Edit</h3>
           <div class="btn-grid">
-            <button class="btn" data-cmd="toggleMarker" data-needs-sel><i data-icon="flag"></i>Folder marker<kbd>M</kbd></button>
+            <button class="btn" data-cmd="toggleMarker" data-needs-sel><i data-icon="flag"></i>Folder marker<kbd>A</kbd></button>
             <button class="btn" data-cmd="previewFrame" data-needs-sel><i data-icon="eye"></i>Preview<kbd>↵</kbd></button>
-            <button class="btn btn-danger" data-cmd="deleteSelected" data-needs-sel><i data-icon="trash-2"></i>Delete<kbd>Del</kbd></button>
+            <button class="btn" data-cmd="merge" data-needs-sel title="Merge selected frames in pairs (1st+2nd, 3rd+4th…)"><i data-icon="merge"></i>Merge pairs<kbd>E</kbd></button>
+            <button class="btn" data-cmd="combine" data-needs-sel title="Combine selected frames that overlap"><i data-icon="combine"></i>Combine<kbd>J</kbd></button>
+            <button class="btn" data-cmd="toggleSuggested" data-needs-sel title="Toggle the suggested-marker flag of one frame"><i data-icon="sparkles"></i>Suggested<kbd>Z</kbd></button>
+            <button class="btn" data-cmd="undo" data-needs-roll title="Undo the last frame change (25 steps)"><i data-icon="undo-2"></i>Undo<kbd>Ctrl Z</kbd></button>
+            <button class="btn btn-danger" data-cmd="deleteSelected" data-needs-sel><i data-icon="trash-2"></i>Delete<kbd>D</kbd></button>
             <button class="btn" data-cmd="clearMarkers" data-needs-roll><i data-icon="folder"></i>Clear markers</button>
+          </div>
+          <div class="split-row">
+            <button class="btn" data-cmd="split" data-needs-sel title="Split each selected frame into equal parts along the film"><i data-icon="split"></i>Split into parts<kbd>S</kbd></button>
+            <input type="number" id="split-parts" min="2" max="20" value="2" aria-label="Parts" title="Number of parts">
           </div>
           <p class="hint"><i data-icon="square-dashed-mouse-pointer"></i>Drag a frame to move it, drag an edge to resize, drag on empty film to draw a new frame. Ctrl-click adds, Shift-click selects a range.</p>
         </div>
@@ -308,29 +323,6 @@
     <span id="status-engine" class="chip chip-quiet"></span>
   </footer>
 
-  <!-- ============================================================ frame preview -->
-  <div class="lightbox" id="frame-modal" hidden>
-    <div class="lightbox-bar" role="dialog" aria-modal="true" aria-labelledby="frame-modal-title">
-      <div class="lb-title">
-        <h2 id="frame-modal-title">Frame</h2>
-        <span class="chip" id="frame-modal-size"></span>
-        <span class="lb-path" id="frame-modal-path"></span>
-      </div>
-      <div class="lb-actions">
-        <button class="btn btn-ghost" data-cmd="modalZoom" title="Fit / actual size (Z)"><i data-icon="scan"></i><span id="frame-modal-zoom">Fit</span></button>
-        <button class="btn btn-ghost" data-cmd="modalMarker" title="Toggle folder marker (M)"><i data-icon="flag"></i>Marker</button>
-        <span class="vb-sep"></span>
-        <button class="icon-btn" data-cmd="modalPrev" title="Previous frame (←)" aria-label="Previous frame"><i data-icon="chevron-left" data-size="18"></i></button>
-        <button class="icon-btn" data-cmd="modalNext" title="Next frame (→)" aria-label="Next frame"><i data-icon="chevron-right" data-size="18"></i></button>
-        <button class="icon-btn" data-cmd="modalClose" title="Close (Esc)" aria-label="Close"><i data-icon="x" data-size="18"></i></button>
-      </div>
-    </div>
-    <div class="lightbox-body" id="frame-modal-body">
-      <img id="frame-modal-img" alt="">
-      <div class="lb-loading" id="frame-modal-loading"><span class="spinner"></span><span>Building frame…</span></div>
-    </div>
-  </div>
-
   <!-- ============================================================ shortcuts -->
   <div class="sheet-backdrop" id="shortcuts-modal" hidden>
     <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
@@ -341,10 +333,16 @@
         <dt><kbd>PgUp</kbd> <kbd>PgDn</kbd></dt><dd>Previous / next page</dd>
         <dt><kbd>Home</kbd> <kbd>End</kbd></dt><dd>First / last page</dd>
         <dt><kbd>Ctrl</kbd> + wheel, <kbd>+</kbd> <kbd>−</kbd></dt><dd>Zoom</dd>
-        <dt><kbd>Ctrl</kbd> <kbd>A</kbd> · <kbd>Esc</kbd></dt><dd>Select all · select none</dd>
-        <dt><kbd>M</kbd></dt><dd>Toggle folder marker</dd>
-        <dt><kbd>Del</kbd></dt><dd>Delete selected frames</dd>
-        <dt><kbd>Enter</kbd> / double-click</dt><dd>Frame preview (<kbd>←</kbd> <kbd>→</kbd> step, <kbd>Z</kbd> zoom)</dd>
+        <dt><kbd>X</kbd> <kbd>C</kbd></dt><dd>Previous / next page</dd>
+        <dt><kbd>G</kbd> <kbd>F</kbd></dt><dd>Previous / next folder marker</dd>
+        <dt><kbd>Ctrl</kbd> <kbd>A</kbd> · <kbd>Ctrl</kbd> <kbd>D</kbd> / <kbd>Esc</kbd></dt><dd>Select all · select none</dd>
+        <dt><kbd>A</kbd> (or <kbd>M</kbd>)</dt><dd>Toggle folder marker</dd>
+        <dt><kbd>D</kbd> / <kbd>Del</kbd></dt><dd>Delete selected frames</dd>
+        <dt><kbd>E</kbd> · <kbd>J</kbd> · <kbd>S</kbd></dt><dd>Merge pairs · combine overlapping · split</dd>
+        <dt><kbd>Z</kbd></dt><dd>Toggle suggested marker</dd>
+        <dt><kbd>Ctrl</kbd> <kbd>Z</kbd></dt><dd>Undo frame change (25 steps)</dd>
+        <dt><kbd>Enter</kbd> / double-click</dt><dd>Open the preview window</dd>
+        <dt>Preview window</dt><dd><kbd>X</kbd> <kbd>C</kbd> frames · <kbd>G</kbd> <kbd>F</kbd> markers · <kbd>R</kbd> rotate · <kbd>M</kbd> mirror · <kbd>N</kbd> negative · <kbd>T</kbd> on top · wheel zoom</dd>
         <dt><kbd>Esc</kbd> while dragging</dt><dd>Cancel the drag</dd>
         <dt><kbd>?</kbd></dt><dd>This sheet</dd>
       </dl>

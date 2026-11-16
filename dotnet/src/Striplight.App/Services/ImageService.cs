@@ -49,8 +49,10 @@ public sealed class ImageService(AppController controller)
             {
                 "strip" => () => StripPreviewRenderer.RenderStrip(roll, index,
                     process.PreviewOnStrips ? process.Tone : ToneSettings.Neutral, process.Negative, rotateCw),
+                // q=full: no downscaling (the preview's "Full quality" / 1:1 view).
                 "frame" when controller.SnapshotFrame(index) is { } frame => () =>
-                    StripPreviewRenderer.RenderFrame(FrameBuilderFor(roll, process.ToProcessSettings(rotateCw)), frame),
+                    StripPreviewRenderer.RenderFrame(FrameBuilderFor(roll, process.ToProcessSettings(rotateCw)), frame,
+                        uri.Query.Contains("q=full") ? int.MaxValue : 2400),
                 _ => () => null,
             };
 
