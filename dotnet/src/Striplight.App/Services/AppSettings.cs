@@ -31,7 +31,7 @@ public sealed class AppSettings
     public double PreviewHeight { get; set; } = 760;
 
     // Export defaults
-    public string Prefix { get; set; } = "";
+    public string Prefix { get; set; } = "gray"; // Lazarus default
     public int FileDigits { get; set; } = 5;
     public bool SeparateFolders { get; set; } = true;
     public int Quality { get; set; } = 100;

@@ -270,6 +270,7 @@ public sealed class AppController
 
         _bridge.On("export.start", args => StartExport(BridgeHost.Args<ExportDto>(args)));
         _bridge.On("export.preview", args => PreviewExportPath(BridgeHost.Arg(args, "index", 0), BridgeHost.Args<ExportDto>(args)));
+        _bridge.On("export.prepareFolders", args => PrepareFolders(BridgeHost.Args<ExportDto>(args)));
         _bridge.On("export.pause", _ => { _exportEngine?.Pause(); return null; });
         _bridge.On("export.resume", _ => { _exportEngine?.Resume(); return null; });
         _bridge.On("export.cancel", _ => { _exportEngine?.Resume(); _exportCts?.Cancel(); return null; });
@@ -603,12 +604,30 @@ public sealed class AppController
     private object PreviewExportPath(int index, ExportDto dto)
     {
         if (!_project.Roll.Loaded || index < 0 || index >= _project.Frames.Count) return new { path = "" };
+        // Folder count: every marker starts a folder; frames before the first marker share folder 1.
+        int markers = _project.Frames.Count(f => f.IsMarker);
+        int folders = Math.Max(1, markers + (_project.Frames.Count > 0 && !_project.Frames[0].IsMarker && markers > 0 ? 1 : 0));
+        int rows = ExportNaming.ArchiveRows(dto.ArchiveList).Count;
         try
         {
             var naming = dto.ToNaming(ExportNaming.DefaultOutputRoot(ProjectRootPath, _project.Roll));
-            return new { path = ExportNaming.PathForFrame(_project.Frames, index, naming).FullPath };
+            return new { path = ExportNaming.PathForFrame(_project.Frames, index, naming).FullPath, folders = ExportNaming.VolumeAndFile(_project.Frames, _project.Frames.Count - 1).Volume, rows };
         }
-        catch (InvalidOperationException e) { return new { path = "", error = e.Message }; }
+        catch (InvalidOperationException e) { return new { path = "", error = e.Message, folders, rows }; }
+    }
+
+    /// <summary>"Prepare folders" (Lazarus): creates every output folder of the export before running it.</summary>
+    private object PrepareFolders(ExportDto dto)
+    {
+        if (!_project.Roll.Loaded || _project.Frames.Count == 0) throw new BridgeException("There are no frames to export.");
+        var naming = dto.ToNaming(ExportNaming.DefaultOutputRoot(ProjectRootPath, _project.Roll));
+        IEnumerable<int> indices = dto.Scope == "selected" ? dto.Indices : Enumerable.Range(0, _project.Frames.Count);
+        List<ExportJob> jobs;
+        try { jobs = ExportEngine.BuildJobs(_project.Frames, indices, naming); }
+        catch (InvalidOperationException e) { throw new BridgeException("Export path error: " + e.Message); }
+        var folders = jobs.Select(j => j.FolderPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        foreach (var f in folders) Directory.CreateDirectory(f);
+        return new { created = folders.Count, root = naming.OutputRoot };
     }
 
     private object StartExport(ExportDto dto)

@@ -562,6 +562,8 @@ function gatherExport() {
 
 function refreshNamingMode() {
   const archive = $('#exp-mode').value === '1';
+  const d = Math.max(1, Math.min(12, Number($('#exp-digits').value) || 5));
+  $('#exp-digits-example').textContent = `e.g. ${'1'.padStart(d, '0')}, ${'12'.padStart(d, '0')}`;
   $('#exp-archive-wrap').hidden = !archive;
   $('#exp-quantum').hidden = archive;
 }
@@ -572,8 +574,12 @@ async function updateExportExample() {
   const r = await call('export.preview', { ...gatherExport(), index }).catch(() => null);
   const el = $('#exp-example');
   if (!r) return;
-  el.classList.toggle('error', !!r.error);
-  el.textContent = r.error ? r.error : `Frame ${index + 1} → ${r.path}`;
+  // Archive method: one list row is needed per folder (marker). Show the count so a gap is seen before exporting.
+  const archive = $('#exp-mode').value === '1';
+  const short = archive && r.rows < r.folders;
+  el.classList.toggle('error', !!r.error || short);
+  const counts = archive ? `\n${r.folders} folder${r.folders === 1 ? '' : 's'} · ${r.rows} list row${r.rows === 1 ? '' : 's'}${short ? ' (rows missing)' : ''}` : '';
+  el.textContent = (r.error ? r.error : `Frame ${index + 1} → ${r.path}`) + counts;
 }
 
 function flushExportSettings() {
@@ -758,6 +764,10 @@ const commands = {
   },
   openFolder: () => run('shell.openFolder', { path: $('#exp-root').value || $('#exp-root').placeholder }),
   exportStart,
+  prepareFolders: async () => {
+    const r = await run('export.prepareFolders', gatherExport());
+    toast(`Created ${r.created} folder${r.created === 1 ? '' : 's'} in ${r.root}`, 'ok');
+  },
   exportPause: async () => {
     state.exportPaused = !state.exportPaused;
     await call(state.exportPaused ? 'export.pause' : 'export.resume');

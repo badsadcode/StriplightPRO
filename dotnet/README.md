@@ -105,21 +105,24 @@ dotnet/
 | Area | Lazarus feature | C# edition |
 |---|---|---|
 | Files | IDF, QPF, SLF load/save, legacy INI SLF | ✅ (+ roll notes in SLF) |
-| Strip view | Paged rows, zoom, strips per row, CW/CCW source orientation | ✅ canvas, Ctrl+wheel zoom |
+| Strip view | Paged rows, zoom, strips per row (+ Auto), CW/CCW source orientation | ✅ canvas, Ctrl+wheel zoom, optional strip numbers |
 | | Frame overlays (normal / odd size / marker / suggested / selected / exported / per-frame) | ✅ |
 | | Select, Ctrl/Shift select, move, resize edges, draw new frame | ✅ |
 | | Trim lines, detection range/area drag handles, split preview, stacked-frame click cycling | ⏳ TODO |
 | Frames | Delete, toggle/clear markers, per-frame rotate/mirror/negative, clear overrides | ✅ |
-| | Suggest markers, combine overlapping, merge adjacent, close gaps, expand, split, select by size | ⏳ TODO |
+| | Merge pairs (E), combine overlapping (J), split (S), toggle suggested (Z), undo (Ctrl+Z) | ✅ |
+| | Suggest markers, close gaps, expand, select by size | ⏳ TODO |
+| Preview | Separate window, always on top, wheel zoom, pan, fit / 1:1, full quality, frame step, markers, per-frame rotate/mirror/negative | ✅ |
 | Detection | Preview-based detection with threshold, min size, strip range, insets | ✅ |
 | Tone | All 9 methods (classic LUTs + auto levels, CLAHE, exposure balance, background flatten), 5 flags, sharpen | ✅ same math, tested |
 | | Per-frame tone sliders | ⏳ values are honoured on export, but not editable yet |
 | Export | Quantum folder naming, archive-list naming, digits/prefix, skip existing, preview fallback, local temp staging | ✅ |
-| | Parallel workers, shared strip cache, pause/stop, failure list | ✅ |
+| | Parallel workers, shared strip cache, pause/stop, failure list, prepare folders | ✅ |
 | | Grayscale TurboJPEG output | ✅ |
 | | Colour output, built-in (FPWriteJPEG) encoder | ⏳ TODO: frames are built in 8-bit gray. Colour strips are converted to gray |
 | Cache | Local preview cache, standalone cache manager | ⏳ TODO (RollPaths already supports the cache path) |
 | Notes | — | ✅ new: TOAST UI Markdown / WYSIWYG roll notes |
+| Themes | — | ✅ new: light / dark, remembered |
 
 Behaviour notes:
 
@@ -128,17 +131,25 @@ Behaviour notes:
 
 ## Keyboard
 
+Main window (same keys as the Lazarus edition; `?` shows the list in the app):
+
 | Key | Action |
 |---|---|
 | Ctrl+O / Ctrl+S / Ctrl+Shift+S | Open, Save, Save as |
-| Page Up / Page Down / Home / End | Pages |
-| Ctrl+wheel, + / − | Zoom |
-| Click, Ctrl+click, Shift+click, Ctrl+A, Esc | Selection |
-| M | Toggle folder marker |
-| Delete | Delete selected frames |
-| Enter / double-click | Frame preview (← → to step, Z zoom, M marker, Esc close) |
-| ? | Shortcut sheet |
+| X / C, Page Up / Page Down, Home / End | Previous / next page, first / last page |
+| G / F | Previous / next folder marker |
+| Ctrl+wheel, + / − | Zoom (wheel alone turns pages) |
+| Click, Ctrl+click, Shift+click | Select, add, range |
+| Ctrl+A / Ctrl+D or Esc | Select all / none |
+| A (or M) | Toggle folder marker |
+| D / Delete | Delete selected frames (Delete asks first for more than 20) |
+| E / J / S | Merge pairs / combine overlapping / split into N parts |
+| Z | Toggle suggested marker (one frame) |
+| Ctrl+Z | Undo frame change (25 steps) |
+| Enter / double-click | Open the preview window |
 | Esc while dragging | Cancel the drag |
+
+Preview window: X / C (or ← / →) previous / next frame by the step, G / F folder markers, R / Shift+R rotate ±90°, M mirror, N negative, A marker, wheel zoom around the cursor, drag to pan, double-click or 0 / 1 for fit / 1:1, Q full quality, T always on top, Esc close.
 
 ## Interface
 

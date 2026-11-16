@@ -311,3 +311,30 @@ public class FrameToolTests
         Assert.Equal(-1, FrameEditor.FindMarker(Row(2), 0, true));
     }
 }
+
+public class ArchiveNamingRealDataTests
+{
+    // Rows in the format Tom prepares for the archive method (one row per folder marker).
+    private const string Rows = ";73;524;0;0;79\n;73;524;0;0;80\n;73;524;0;0;81\n";
+
+    [Fact]
+    public void BuildsArchiveFoldersAndFileNames()
+    {
+        // 3 markers, 2 frames each
+        var frames = Enumerable.Range(0, 6).Select(i => new FrameRecord
+        {
+            Index = i, LeadEdge = i * 100, TrailEdge = i * 100 + 90, LeftEdge = 0, RightEdge = 50, IsMarker = i % 2 == 0,
+        }).ToList();
+        var o = new NamingOptions { OutputRoot = "OUT", Mode = 1, FileDigits = 5, ArchiveList = Rows };
+
+        string P(params string[] parts) => Path.Combine(parts);
+        Assert.Equal(P("OUT", "73", "524", "0", "0", "79", "73_524_0_0_79_00001.jpg"), ExportNaming.PathForFrame(frames, 0, o).FullPath);
+        Assert.Equal(P("OUT", "73", "524", "0", "0", "79", "73_524_0_0_79_00002.jpg"), ExportNaming.PathForFrame(frames, 1, o).FullPath);
+        Assert.Equal(P("OUT", "73", "524", "0", "0", "80", "73_524_0_0_80_00001.jpg"), ExportNaming.PathForFrame(frames, 2, o).FullPath);
+        Assert.Equal(P("OUT", "73", "524", "0", "0", "81", "73_524_0_0_81_00002.jpg"), ExportNaming.PathForFrame(frames, 5, o).FullPath);
+
+        // Marker method on the same frames: 00001\, 00002\, 00003\ with prefix + counter.
+        var q = new NamingOptions { OutputRoot = "OUT", Mode = 0, FileDigits = 5, Prefix = "gray" };
+        Assert.Equal(P("OUT", "00003", "gray00002.jpg"), ExportNaming.PathForFrame(frames, 5, q).FullPath);
+    }
+}

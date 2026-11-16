@@ -267,10 +267,15 @@
           <label class="field">Naming
             <select id="exp-mode"><option value="0">Quantum folders · one folder per marker</option><option value="1">Archive list · one row per marker</option></select>
           </label>
+          <div class="field-grid two">
+            <label class="field" title="Leading zeros of the file counter (and of marker folder names): 5 gives 00001">Counter digits
+              <input type="number" id="exp-digits" min="1" max="12" value="5">
+            </label>
+            <div class="field digits-example" id="exp-digits-example">00001</div>
+          </div>
           <div class="field-grid two" id="exp-quantum">
             <label class="field">File prefix<input type="text" id="exp-prefix" placeholder="none"></label>
-            <label class="field">Digits<input type="number" id="exp-digits" min="1" max="12" value="5"></label>
-            <label class="switch span-2"><input type="checkbox" id="exp-sep" checked><span></span>Folder per marker</label>
+            <label class="switch" style="align-self:end;padding-bottom:7px"><input type="checkbox" id="exp-sep" checked><span></span>Folder per marker</label>
           </div>
           <label class="field" id="exp-archive-wrap" hidden>Archive list <small>parts separated by <code>;</code> become folders and the file name</small>
             <textarea id="exp-archive" rows="6" spellcheck="false" placeholder="Box 1;Folder A&#10;Box 1;Folder B"></textarea>
@@ -301,6 +306,7 @@
             <button class="btn" data-cmd="exportPause" id="exp-pause" disabled><i data-icon="pause"></i><span>Pause</span></button>
             <button class="btn" data-cmd="exportStop" id="exp-stop" disabled><i data-icon="square"></i>Stop</button>
           </div>
+          <button class="btn" data-cmd="prepareFolders" data-needs-roll title="Create all output folders now, without exporting"><i data-icon="folder"></i>Prepare folders</button>
           <div class="progress"><div class="progress-bar" id="exp-bar"></div></div>
           <div class="status-line" id="exp-status">Ready</div>
           <ul class="failures" id="exp-failures"></ul>
