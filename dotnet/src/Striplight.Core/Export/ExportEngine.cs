@@ -19,6 +19,8 @@ public sealed record ExportOptions
     public int Workers { get; init; } = Math.Max(1, Environment.ProcessorCount / 2);
     /// <summary>Decoded strips kept in memory, shared by all workers.</summary>
     public int StripCacheLimit { get; init; } = 4;
+    /// <summary>Strip files read ahead in the background (network shares); 0 = off.</summary>
+    public int ReadAhead { get; init; } = 4;
 }
 
 public sealed record ExportJobResult(ExportJob Job, ExportOutcome Outcome, string? Error, long BuildMs, long SaveMs);
@@ -59,8 +61,19 @@ public sealed class ExportEngine
         // Workers get private copies so the UI can keep editing while an export runs.
         var rollCopy = roll.Clone();
         var frameCopy = frames.Select(f => f.Clone()).ToList();
-        var cache = new GrayStripCache(Math.Max(2, options.StripCacheLimit));
+        // Read-ahead keeps the network busy while workers build frames; each strip file is read once.
+        using var prefetch = options.ReadAhead > 0
+            ? new StripPrefetcher(StripPrefetcher.PathsFor(rollCopy, frameCopy,
+                options.SkipExisting ? jobs.Where(j => !File.Exists(j.FullPath)) : jobs), options.ReadAhead)
+            : null;
+        var cache = new GrayStripCache(Math.Max(2, options.StripCacheLimit), path =>
+        {
+            byte[] bytes = prefetch?.Take(path) ?? File.ReadAllBytes(path);
+            var d = TurboJpeg.Decode(bytes, TurboJpeg.PixelFormatGray) ?? throw new TurboJpegException("Could not decode " + path);
+            return new GrayImage(d.Width, d.Height, d.Pixels);
+        });
         var builder = new FrameBuilder(rollCopy, process, cache) { AllowPreviewFallback = options.AllowPreviewFallback };
+        Func<string, bool> sourceAvailable = p => cache.Contains(p) || (prefetch?.Has(p) ?? false) || File.Exists(p);
 
         int next = -1, exported = 0, skipped = 0, failed = 0;
         var failures = new List<ExportJobResult>();
@@ -101,7 +114,7 @@ public sealed class ExportEngine
                     return new(job, ExportOutcome.Skipped, null, 0, 0);
 
                 var t = Stopwatch.StartNew();
-                var img = builder.Build(frameCopy[job.FrameIdx]);
+                var img = builder.Build(frameCopy[job.FrameIdx], sourceAvailable);
                 var jpeg = TurboJpeg.EncodeGray(img, options.Quality, options.Progressive);
                 buildMs = t.ElapsedMilliseconds;
 
