@@ -5,6 +5,9 @@
 
 import { call, on } from './bridge.js';
 import { hydrateIcons } from './icons.js';
+import { Keymap } from './keymap.js';
+
+const keymap = new Keymap();
 
 hydrateIcons();
 
@@ -39,6 +42,7 @@ async function load(index, { keepView = false } = {}) {
     st.step = s.step;
     $('#pv-step').value = s.step;
     document.documentElement.dataset.theme = s.theme;
+    keymap.setOverrides(s.keyBindings || {});
   }
   render(info);
   if (!keepView && st.mode === 'free') st.mode = 'fit';
@@ -262,23 +266,20 @@ $('#pv-step').addEventListener('change', (e) => {
 
 document.addEventListener('keydown', (e) => {
   if (e.target.closest('input')) { if (e.key === 'Escape') e.target.blur(); return; }
-  if (e.ctrlKey || e.altKey || e.metaKey) return;
-  const k = e.key.toLowerCase();
+  const id = keymap.match(e, 'preview');
   const map = {
-    x: actions.prev, arrowleft: actions.prev, pageup: actions.prev,
-    c: actions.next, arrowright: actions.next, pagedown: actions.next,
-    g: actions.prevMarker, f: actions.nextMarker,
-    r: e.shiftKey ? actions.rotL : actions.rotR,
-    m: actions.mirror, n: actions.negative, a: actions.marker,
-    '+': actions.zoomIn, '=': actions.zoomIn, '-': actions.zoomOut,
-    '0': actions.fit, ' ': actions.fit, '1': actions.one,
-    q: actions.quality, t: actions.topmost, i: toggleTarget,
-    home: () => go(0), end: () => go((st.info?.count ?? 1) - 1),
-    escape: () => call('preview.close').catch(() => {}),
+    'pv.prev': actions.prev, 'pv.next': actions.next, 'pv.prevMarker': actions.prevMarker, 'pv.nextMarker': actions.nextMarker,
+    'pv.first': () => go(0), 'pv.last': () => go((st.info?.count ?? 1) - 1),
+    'pv.rotR': actions.rotR, 'pv.rotL': actions.rotL, 'pv.mirror': actions.mirror, 'pv.negative': actions.negative,
+    'pv.marker': actions.marker, 'pv.zoomIn': actions.zoomIn, 'pv.zoomOut': actions.zoomOut,
+    'pv.fit': actions.fit, 'pv.one': actions.one, 'pv.quality': actions.quality, 'pv.topmost': actions.topmost,
+    'pv.target': toggleTarget, 'pv.close': () => call('preview.close').catch(() => {}),
   };
-  const fn = map[k];
+  const fn = id && map[id];
   if (fn) { e.preventDefault(); fn(); }
 });
+
+on('keymap.changed', (b) => keymap.setOverrides(b));
 
 // ------------------------------------------------------------------ host events
 

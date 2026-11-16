@@ -108,13 +108,7 @@
         <canvas id="scrubber" aria-label="Roll overview: click to jump"></canvas>
       </div>
 
-      <menu class="context-menu" id="context-menu" hidden>
-        <li><button data-ctx="preview"><i data-icon="eye"></i>Preview frame<kbd>Enter</kbd></button></li>
-        <li><button data-ctx="marker"><i data-icon="flag"></i>Toggle folder marker<kbd>M</kbd></button></li>
-        <li><button data-ctx="clearOverrides"><i data-icon="rotate-ccw"></i>Clear per-frame settings</button></li>
-        <li class="sep"></li>
-        <li><button data-ctx="delete" class="danger"><i data-icon="trash-2"></i>Delete<kbd>Del</kbd></button></li>
-      </menu>
+      <menu class="context-menu" id="context-menu" hidden></menu>
     </section>
 
     <!-- ============================================================ inspector -->
@@ -167,6 +161,35 @@
         </div>
 
         <div class="section">
+          <h3>Repair</h3>
+          <div class="btn-grid">
+            <button class="btn" data-cmd="closeGaps" data-needs-sel title="Neighbouring selected frames meet in the middle of the gap"><i data-icon="merge"></i>Fill gaps</button>
+            <button class="btn" data-cmd="joinClose" data-needs-sel title="Join selected fragments closer than the join gap"><i data-icon="combine"></i>Join close</button>
+          </div>
+          <div class="field-grid two">
+            <label class="field">Join gap<span class="suffix"><input type="number" id="join-gap" min="0" value="600"><em>px</em></span></label>
+            <label class="switch" style="align-self:end;padding-bottom:7px"><input type="checkbox" id="join-show"><span></span>Show reach</label>
+          </div>
+          <div class="field-grid four">
+            <label class="field">Left<input type="number" id="ex-l" value="0"></label>
+            <label class="field">Right<input type="number" id="ex-r" value="0"></label>
+            <label class="field">Top<input type="number" id="ex-t" value="0"></label>
+            <label class="field">Bottom<input type="number" id="ex-b" value="0"></label>
+          </div>
+          <button class="btn" data-cmd="expand" data-needs-sel title="Grow (or with negative values shrink) the selected frames by these pixels, as seen on screen"><i data-icon="expand"></i>Expand selected</button>
+        </div>
+
+        <div class="section">
+          <h3>Trim</h3>
+          <label class="switch"><input type="checkbox" id="trim-show"><span></span>Show trim lines (drag the yellow lines)</label>
+          <div class="field-grid two">
+            <label class="field">Top<span class="suffix"><input type="number" id="trim-top" min="0" value="0"><em>px</em></span></label>
+            <label class="field">Bottom<span class="suffix"><input type="number" id="trim-bottom" min="0" value="0"><em>px</em></span></label>
+          </div>
+          <button class="btn" data-cmd="applyTrim" data-needs-roll title="Clip every frame that reaches into the yellow bands"><i data-icon="scan"></i>Apply trim to all frames</button>
+        </div>
+
+        <div class="section">
           <h3>Per-frame orientation</h3>
           <div class="seg" id="ovr-rotation" role="radiogroup" aria-label="Rotation">
             <button data-v="0">0°</button><button data-v="90">90°</button><button data-v="180">180°</button><button data-v="270">270°</button>
@@ -205,6 +228,8 @@
             <label class="field">Ignore top<span class="suffix"><input type="number" id="det-left" min="0" value="0"><em>px</em></span></label>
             <label class="field">Ignore bottom<span class="suffix"><input type="number" id="det-right" min="0" value="0"><em>px</em></span></label>
           </div>
+          <label class="switch"><input type="checkbox" id="det-area"><span></span>Use and show the ignore area (drag the blue lines)</label>
+          <p class="hint">Detection range start and end are marked on the strips; right-click a strip to set them.</p>
         </div>
         <div class="section run-card">
           <div class="btn-row">
@@ -368,25 +393,11 @@
   <div class="sheet-backdrop" id="shortcuts-modal" hidden>
     <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
       <header><h2 id="shortcuts-title">Keyboard shortcuts</h2><button class="icon-btn" data-cmd="shortcutsClose" aria-label="Close"><i data-icon="x"></i></button></header>
-      <dl class="keys">
-        <dt><kbd>Ctrl</kbd> <kbd>O</kbd></dt><dd>Open roll</dd>
-        <dt><kbd>Ctrl</kbd> <kbd>S</kbd></dt><dd>Save · add <kbd>Shift</kbd> for Save as</dd>
-        <dt><kbd>PgUp</kbd> <kbd>PgDn</kbd></dt><dd>Previous / next page</dd>
-        <dt><kbd>Home</kbd> <kbd>End</kbd></dt><dd>First / last page</dd>
-        <dt><kbd>Ctrl</kbd> + wheel, <kbd>+</kbd> <kbd>−</kbd></dt><dd>Zoom</dd>
-        <dt><kbd>X</kbd> <kbd>C</kbd></dt><dd>Previous / next page</dd>
-        <dt><kbd>G</kbd> <kbd>F</kbd></dt><dd>Previous / next folder marker</dd>
-        <dt><kbd>Ctrl</kbd> <kbd>A</kbd> · <kbd>Ctrl</kbd> <kbd>D</kbd> / <kbd>Esc</kbd></dt><dd>Select all · select none</dd>
-        <dt><kbd>A</kbd> (or <kbd>M</kbd>)</dt><dd>Toggle folder marker</dd>
-        <dt><kbd>D</kbd> / <kbd>Del</kbd></dt><dd>Delete selected frames</dd>
-        <dt><kbd>E</kbd> · <kbd>J</kbd> · <kbd>S</kbd></dt><dd>Merge pairs · combine overlapping · split</dd>
-        <dt><kbd>Z</kbd></dt><dd>Toggle suggested marker</dd>
-        <dt><kbd>Ctrl</kbd> <kbd>Z</kbd></dt><dd>Undo frame change (25 steps)</dd>
-        <dt><kbd>Enter</kbd> / double-click</dt><dd>Open the preview window</dd>
-        <dt>Preview window</dt><dd><kbd>X</kbd> <kbd>C</kbd> frames · <kbd>G</kbd> <kbd>F</kbd> markers · <kbd>R</kbd> rotate · <kbd>M</kbd> mirror · <kbd>N</kbd> negative · <kbd>T</kbd> on top · wheel zoom</dd>
-        <dt><kbd>Esc</kbd> while dragging</dt><dd>Cancel the drag</dd>
-        <dt><kbd>?</kbd></dt><dd>This sheet</dd>
-      </dl>
+      <div class="keys-editor" id="keys-editor"></div>
+      <footer class="keys-foot">
+        <span class="muted">Click + to add a key, × to remove one. A key used elsewhere moves to the new command.</span>
+        <button class="btn" data-cmd="keysReset"><i data-icon="rotate-ccw"></i>Reset to defaults</button>
+      </footer>
     </div>
   </div>
 

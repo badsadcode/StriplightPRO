@@ -132,7 +132,9 @@ Behaviour notes:
 
 ## Keyboard
 
-Main window (same keys as the Lazarus edition; `?` shows the list in the app):
+All shortcuts are configurable: press `?` (or the keyboard button) to open the shortcut editor, click + to add a key, × to remove one. Commands without a default key (fill gaps, join close, expand, trim, select section, detect, suggest...) can be bound too. Bindings are saved in `settings.json` and apply to the main and preview windows.
+
+Defaults (same keys as the Lazarus edition):
 
 | Key | Action |
 |---|---|
@@ -149,6 +151,7 @@ Main window (same keys as the Lazarus edition; `?` shows the list in the app):
 | Ctrl+Z | Undo frame change (25 steps) |
 | Enter / double-click | Open the preview window |
 | Esc while dragging | Cancel the drag |
+| Right-click | Context menu (Lazarus-style: marker, merge, split, fill gaps, join close, expand, select / delete section, detection start / end here) |
 
 Preview window: X / C (or ← / →) previous / next frame by the step, G / F folder markers, R / Shift+R rotate ±90°, M mirror, N negative, A marker, wheel zoom around the cursor, drag to pan, double-click or 0 / 1 for fit / 1:1, Q full quality, T always on top, I show / hide the target banner (folder number, target folder, file name), Esc close.
 

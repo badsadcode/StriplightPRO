@@ -41,6 +41,11 @@ export class StripView {
     this.showStripNumbers = false;
     this.splitPreview = false;    // show where S would cut the selected frames
     this.splitParts = 2;
+    // Overlays (values in full-resolution pixels, measured from the screen top / bottom of a strip)
+    this.trim = { show: false, top: 0, bottom: 0 };     // trim bands (Lazarus "Trim")
+    this.area = { show: false, top: 0, bottom: 0 };     // detection ignore area
+    this.range = { show: false, from: 0, to: 0 };       // detection strip range (0-based, inclusive)
+    this.join = { show: false, gap: 600 };              // "join close" reach after selected frames
     this.refreshTheme();
     this.imageVersion = 1;
     this.images = new Map();      // stripIdx -> { img, version, state }
@@ -310,7 +315,10 @@ export class StripView {
       if (this.showStripNumbers) this.pill(String(strip + 1), r.x + 5, r.y + r.h - 22, 'rgba(10,11,13,.72)', '#a4a9b4');
     }
 
+    this.drawBands();
     this.drawFrames();
+    this.drawJoinReach();
+    this.drawRangeMarkers();
     if (this.drag && this.drag.mode === 'draw' && this.drag.moved) this.drawRubberBand();
     if (allLoaded) this.prefetchNextPage();
   }
@@ -458,6 +466,101 @@ export class StripView {
     sq(mx, g.y2);
   }
 
+  // ------------------------------------------------------------------ overlays
+
+  /** Rows on this page as { top, x1, x2 } (x range covered by strips). */
+  pageRows() {
+    const rows = [];
+    for (let i = 0; i < this.pageStripCount; i += this.stripsPerRow) {
+      const a = this.stripRect(i), b = this.stripRect(Math.min(this.pageStripCount - 1, i + this.stripsPerRow - 1));
+      rows.push({ top: a.y, x1: a.x, x2: b.x + b.w });
+    }
+    return rows;
+  }
+
+  /** Screen y of an overlay line: 'top' lines from the strip top, 'bottom' from the strip bottom. */
+  lineY(row, side, px) {
+    return side === 'top' ? row.top + px * this.pxPerAcross : row.top + this.stripH - px * this.pxPerAcross;
+  }
+
+  drawBands() {
+    const ctx = this.ctx;
+    const layers = [
+      { o: this.area, fill: 'rgba(40,130,235,0.30)', line: 'rgb(40,130,235)', label: 'Ignore' },
+      { o: this.trim, fill: 'rgba(255,200,0,0.42)', line: 'rgb(255,200,0)', label: 'Trim' },
+    ];
+    for (const { o, fill, line, label } of layers) {
+      if (!o.show) continue;
+      for (const r of this.pageRows()) {
+        for (const side of ['top', 'bottom']) {
+          const px = o[side];
+          if (px <= 0) continue;
+          const y = this.lineY(r, side, px);
+          ctx.fillStyle = fill;
+          if (side === 'top') ctx.fillRect(r.x1, r.top, r.x2 - r.x1, y - r.top);
+          else ctx.fillRect(r.x1, y, r.x2 - r.x1, r.top + this.stripH - y);
+          ctx.strokeStyle = line;
+          ctx.lineWidth = 2;
+          ctx.setLineDash([8, 4]);
+          ctx.beginPath(); ctx.moveTo(r.x1, y); ctx.lineTo(r.x2, y); ctx.stroke();
+          ctx.setLineDash([]);
+          this.pill(`${label} ${px}`, r.x1 + 4, side === 'top' ? y + 3 : y - 20, line, '#111', true);
+        }
+      }
+    }
+  }
+
+  drawRangeMarkers() {
+    if (!this.range.show) return;
+    const ctx = this.ctx, first = this.firstStrip, last = first + this.pageStripCount - 1;
+    const mark = (strip, atEnd, color, text) => {
+      if (strip < first || strip > last) return;
+      const r = this.stripRect(strip - first);
+      const x = atEnd ? r.x + r.w - 1.5 : r.x + 1.5;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(x, r.y); ctx.lineTo(x, r.y + r.h); ctx.stroke();
+      this.pill(text, atEnd ? r.x + r.w - 70 : r.x + 5, r.y + 5, color, '#111', true);
+    };
+    mark(this.range.from, false, '#22c55e', 'Detect start');
+    mark(this.range.to, true, '#ef4444', 'Detect end');
+  }
+
+  /** "Join close" reach: how far after each selected frame a fragment still gets joined. */
+  drawJoinReach() {
+    if (!this.join.show || this.join.gap <= 0 || !this.selected.size) return;
+    const ctx = this.ctx;
+    for (const i of this.selected) {
+      const f = this.frames[i];
+      if (!f) continue;
+      const reach = { leadEdge: f.trailEdge, trailEdge: f.trailEdge + this.join.gap, leftEdge: f.leftEdge, rightEdge: f.rightEdge };
+      for (const g of this.frameSegments(reach)) {
+        ctx.fillStyle = 'rgba(245,165,36,0.22)';
+        ctx.fillRect(g.x1, g.y1, g.x2 - g.x1, g.y2 - g.y1);
+        ctx.strokeStyle = 'rgba(245,165,36,0.95)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 3]);
+        if (g.isTrail) { ctx.beginPath(); ctx.moveTo(g.x2, g.y1); ctx.lineTo(g.x2, g.y2); ctx.stroke(); }
+        ctx.setLineDash([]);
+      }
+    }
+  }
+
+  /** Draggable trim / ignore lines under the point: { layer: 'trim'|'area', side: 'top'|'bottom' } or null. */
+  hitLine(x, y) {
+    for (const layer of ['trim', 'area']) {
+      const o = this[layer];
+      if (!o.show) continue;
+      for (const r of this.pageRows()) {
+        if (x < r.x1 || x > r.x2) continue;
+        for (const side of ['top', 'bottom']) {
+          if (Math.abs(y - this.lineY(r, side, o[side])) <= HANDLE) return { layer, side, rowTop: r.top };
+        }
+      }
+    }
+    return null;
+  }
+
   /** Split preview (Lazarus): dashed cut lines where S would split each selected frame. */
   drawSplitCuts(f) {
     const n = this.splitParts;
@@ -595,6 +698,12 @@ export class StripView {
       this.beginDrag(e, 'resize', film, [handle.idx], handle);
       return;
     }
+    const line = this.hitLine(x, y);
+    if (line) {
+      this.canvas.setPointerCapture(e.pointerId);
+      this.drag = { mode: 'line', line, moved: false, startX: e.clientX, startY: e.clientY, indices: [], originals: [], edges: [], cursor: 'ns' };
+      return;
+    }
     const hit = this.hitFrame(x, y);
     if (hit >= 0) {
       if (e.ctrlKey || e.shiftKey) {
@@ -637,6 +746,15 @@ export class StripView {
     }
     if (!d.moved && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < DRAG_START) return;
     d.moved = true;
+    if (d.mode === 'line') {
+      const { layer, side, rowTop } = d.line;
+      const raw = side === 'top' ? (y - rowTop) / this.pxPerAcross : (rowTop + this.stripH - y) / this.pxPerAcross;
+      const v = Math.round(Math.max(0, Math.min(this.roll.widthPixels * 0.48, raw)));
+      this[layer][side] = v;
+      this.invalidate();
+      this.cb.onOverlayChanged?.(layer, side, v);
+      return;
+    }
     // Stay in the start row unless the pointer is well into another row (intentional move
     // across rows); small vertical drift during a horizontal drag must not jump a whole row.
     let yRow = y;
@@ -648,6 +766,12 @@ export class StripView {
     if (!film) return;
     if (d.mode !== 'draw') {
       film.across = Math.round(Math.max(0, Math.min(this.roll.widthPixels, this.yToAcross(y - d.rowTop))));
+      // Rows continue into each other: past the end of a row the film goes on in the next
+      // row, before its start in the previous one (as in the Lazarus strip view).
+      const row = Math.max(0, Math.min(this.rowsPerPage - 1, Math.floor((yRow - this.originY) / this.stripH)));
+      const rowStart = (this.firstStrip + row * this.stripsPerRow) * this.roll.lengthLines;
+      const total = this.roll.stripCount * this.roll.lengthLines;
+      film.lead = Math.round(Math.max(0, Math.min(total, rowStart + (x - this.originX) / this.pxPerLine)));
     }
     d.curFilm = film;
     const r = this.roll, maxLead = r.stripCount * r.lengthLines, minSize = 4 * Math.max(1, r.previewDownScale);
@@ -684,6 +808,7 @@ export class StripView {
     if (!d) return;
     this.drag = null;
     this.canvas.releasePointerCapture?.(e.pointerId);
+    if (d.mode === 'line') { this.invalidate(); return; }
     if (!d.moved) {
       if (d.mode === 'draw') this.selectNone();
       else if (d.mode === 'move') {
@@ -726,11 +851,12 @@ export class StripView {
 
   onContextMenu(e) {
     e.preventDefault();
+    if (!this.roll) return;
     const { x, y } = this.point(e);
     const hit = this.hitFrame(x, y);
-    if (hit < 0) return;
-    if (!this.selected.has(hit)) this.select(hit);
-    this.cb.onContextMenu?.(x, y, hit);
+    const film = this.screenToFilm(x, y, false);
+    if (hit >= 0 && !this.selected.has(hit)) this.select(hit);
+    this.cb.onContextMenu?.(x, y, hit, film ? film.strip : -1);
   }
 
   onWheel(e) {
@@ -748,6 +874,7 @@ export class StripView {
     const handle = !this.drag && this.hitHandle(x, y);
     const cls = this.drag ? (this.drag.mode === 'draw' ? 'draw' : this.drag.mode === 'move' ? 'move' : '')
       : handle ? handle.cursor
+      : this.hitLine(x, y) ? 'ns'
       : this.hitFrame(x, y) >= 0 ? 'move' : '';
     this.canvas.className = cls;
     if (this.drag?.mode === 'resize') this.canvas.className = this.drag.cursor;

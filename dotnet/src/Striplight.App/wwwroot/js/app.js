@@ -5,9 +5,10 @@
 import { call, on, inHost } from './bridge.js';
 import { StripView, hasTone } from './stripView.js';
 import { initNotes, setNotes, flushNotes } from './notes.js';
-import { hydrateIcons } from './icons.js';
+import { hydrateIcons, icon } from './icons.js';
 import { initSegmented, initRanges, paintRange } from './ui.js';
 import { Scrubber } from './scrubber.js';
+import { COMMANDS, Keymap, comboFromEvent, keyLabel } from './keymap.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -41,7 +42,8 @@ const view = new StripView($('#strip-canvas'), {
   onFramesEdited: (indices) => patchFrames(indices),
   onFrameCreated: (frame) => addFrame(frame),
   onOpenFrame: (idx) => openFrameModal(idx),
-  onContextMenu: (x, y) => showContextMenu(x, y),
+  onContextMenu: (x, y, hit, strip) => showContextMenu(x, y, hit, strip),
+  onOverlayChanged: (layer, side, v) => overlayChanged(layer, side, v),
   onDismissMenus: () => hideContextMenu(),
   onZoomRequest: (z) => setZoom(z),
 });
@@ -139,6 +141,7 @@ function applySession(s) {
 
   loadProcess(s.process);
   loadExport(s.export, s.defaultOutputRoot);
+  refreshOverlays();
   setNotes(s.notes);
   refreshFramesPanel();
   refreshPager();
@@ -384,6 +387,87 @@ function setFill(v, persist = true) {
 $('#fill-range').addEventListener('input', (e) => setFill(e.target.value));
 $('#fill-num').addEventListener('change', (e) => setFill(e.target.value));
 
+// ------------------------------------------------------------------ repair, trim, sections, overlays
+
+const W = () => state.session.roll.widthPixels;
+
+/** Expand: screen directions mapped to the frame edges (top/bottom depend on CW/CCW). */
+function expandSelected() {
+  const n = (id) => Number($(id).value) || 0;
+  const top = n('#ex-t'), bottom = n('#ex-b');
+  return frameTool('frames.expand', {
+    lead: n('#ex-l'), trail: n('#ex-r'),
+    right: view.rotateCw ? bottom : top, left: view.rotateCw ? top : bottom,
+  });
+}
+
+/** Trim: the yellow bands are measured from the screen top / bottom of a strip. */
+async function applyTrim() {
+  const top = Number($('#trim-top').value) || 0, bottom = Number($('#trim-bottom').value) || 0;
+  if (!top && !bottom) { toast('Set the trim lines first (Top / Bottom).'); return; }
+  if (!confirm(`Clip all ${view.frames.length} frames to the trim lines?\nOnly frames that reach into the yellow bands change.`)) return;
+  const w = W();
+  const minLeft = view.rotateCw ? top : bottom;            // stored column 0 is the screen top in CW mode
+  const maxRight = view.rotateCw ? (bottom ? w - bottom : 0) : (top ? w - top : 0);
+  const r = await run('frames.trim', { minLeft, maxRight });
+  applyFrames(r.frames);
+  status(`Trimmed ${r.count} frame${r.count === 1 ? '' : 's'}`);
+  $('#trim-top').value = $('#trim-bottom').value = 0;   // like Lazarus: lines reset after apply
+  view.trim.top = view.trim.bottom = 0;
+  view.invalidate();
+}
+
+async function selectSection(idx) {
+  const r = await run('frames.section', { index: idx, includeSuggested: true });
+  const ids = [];
+  for (let i = r.start; i <= r.end; i++) ids.push(i);
+  view.setFrames(view.frames, ids);
+  refreshFramesPanel();
+  scrubber.invalidate();
+  status(`Selected folder section: frames ${r.start + 1}–${r.end + 1}`);
+}
+
+async function deleteSection(idx) {
+  const r0 = await run('frames.section', { index: idx, includeSuggested: false });
+  if (!confirm(`Delete frames ${r0.start + 1}–${r0.end + 1} (${r0.end - r0.start + 1} frames, from the folder marker to the next one)?`)) return;
+  const r = await run('frames.deleteSection', { index: idx });
+  applyFrames(r.frames, []);
+  status(`Deleted ${r.count} frames`);
+}
+
+async function clearExported(indices) {
+  const frames = await run('frames.clearExportedOn', indices ? { indices } : {});
+  applyFrames(frames);
+}
+
+function setDetectRange(which, strip) {
+  $(which === 'from' ? '#det-from' : '#det-to').value = strip + 1;
+  refreshOverlays();
+  showTab('detect');
+  toast(`Detection ${which === 'from' ? 'starts' : 'ends'} at strip ${strip + 1}`);
+}
+
+/** Pushes the panel values into the strip-view overlays. */
+function refreshOverlays() {
+  if (!hasRoll()) return;
+  const num = (id) => Math.max(0, Number($(id).value) || 0);
+  view.trim = { show: $('#trim-show').checked, top: num('#trim-top'), bottom: num('#trim-bottom') };
+  view.area = { show: $('#det-area').checked, top: num('#det-left'), bottom: num('#det-right') };
+  const from = Math.max(0, num('#det-from') - 1), to = Math.max(0, num('#det-to') - 1);
+  view.range = { show: from > 0 || to < state.session.roll.stripCount - 1, from, to };
+  view.join = { show: $('#join-show').checked, gap: num('#join-gap') };
+  view.invalidate();
+}
+
+/** A trim / ignore line was dragged on the strips: show the new value in its field. */
+function overlayChanged(layer, side, v) {
+  const id = layer === 'trim' ? (side === 'top' ? '#trim-top' : '#trim-bottom') : (side === 'top' ? '#det-left' : '#det-right');
+  $(id).value = v;
+}
+
+['#trim-show', '#trim-top', '#trim-bottom', '#det-area', '#det-left', '#det-right', '#det-from', '#det-to', '#join-show', '#join-gap']
+  .forEach((id) => $(id).addEventListener('input', refreshOverlays));
+
 // ------------------------------------------------------------------ folder-marker suggestions
 
 const anchor = () => (view.selected.size === 1 ? [...view.selected][0] : -1);
@@ -540,8 +624,8 @@ async function detect() {
     stripTo: Math.min(stripCount - 1, (Number($('#det-to').value) || stripCount) - 1),
     // Insets are counted from stored column 0, which is the bottom of the screen in the
     // default CCW orientation and the top in CW mode. The fields are labelled as seen on screen.
-    leftInset: Number($(view.rotateCw ? '#det-left' : '#det-right').value) || 0,
-    rightInset: Number($(view.rotateCw ? '#det-right' : '#det-left').value) || 0,
+    leftInset: $('#det-area').checked ? Number($(view.rotateCw ? '#det-left' : '#det-right').value) || 0 : 0,
+    rightInset: $('#det-area').checked ? Number($(view.rotateCw ? '#det-right' : '#det-left').value) || 0 : 0,
     useToneSliders: $('#det-tone').checked,
   };
   state.detecting = true;
@@ -772,27 +856,51 @@ on('frames.changed', async (d) => {
 
 // ------------------------------------------------------------------ context menu
 
-function showContextMenu(x, y) {
+// Right-click menu (like the Lazarus strip-view popup, plus a few extras).
+function showContextMenu(x, y, hit, strip) {
   const m = $('#context-menu');
+  const sel = view.selected.size > 0;
+  const items = [
+    hit >= 0 && { label: `Frame ${hit + 1}`, head: true },
+    { label: 'Preview frame', key: 'previewFrame', icon: 'eye', on: hit >= 0, run: () => openFrameModal(hit) },
+    { label: 'Toggle folder marker', key: 'toggleMarker', icon: 'flag', on: sel, run: () => frameCommand('frames.toggleMarker') },
+    { label: 'Select folder section', key: 'selectSection', icon: 'grid-2x2', on: hit >= 0, run: () => selectSection(hit) },
+    { label: 'Delete folder section from marker', key: 'deleteSection', icon: 'trash-2', on: hit >= 0, danger: true, run: () => deleteSection(hit) },
+    'sep',
+    { label: 'Clear exported mark', icon: 'x', on: hit >= 0 && view.frames[hit]?.isExported, run: () => clearExported([hit]) },
+    { label: 'Clear exported marks on selected', key: 'clearExportedSel', icon: 'x', on: sel, run: () => clearExported(selection()) },
+    { label: 'Clear all exported marks', icon: 'x', on: true, run: () => clearExported(null) },
+    'sep',
+    { label: strip >= 0 ? `Set detection start here (strip ${strip + 1})` : 'Set detection start here', icon: 'chevrons-right', on: strip >= 0, run: () => setDetectRange('from', strip) },
+    { label: strip >= 0 ? `Set detection end here (strip ${strip + 1})` : 'Set detection end here', icon: 'chevrons-left', on: strip >= 0, run: () => setDetectRange('to', strip) },
+    'sep',
+    { label: 'Clear per-frame settings', icon: 'rotate-ccw', on: sel, run: () => frameCommand('frames.clearOverrides') },
+    { label: 'Delete selected', key: 'deleteSelected', icon: 'trash-2', on: sel, danger: true, run: () => deleteSelected(true) },
+  ].filter(Boolean);
+  m.replaceChildren();
+  for (const it of items) {
+    const li = document.createElement('li');
+    if (it === 'sep') { li.className = 'sep'; m.append(li); continue; }
+    if (it.head) { li.className = 'ctx-head'; li.textContent = it.label; m.append(li); continue; }
+    const b = document.createElement('button');
+    b.disabled = !it.on;
+    if (it.danger) b.className = 'danger';
+    b.innerHTML = icon(it.icon);
+    b.append(it.label);
+    const keys = it.key ? keymap.keysFor(it.key) : [];
+    if (keys.length) { const k = document.createElement('kbd'); k.textContent = keyLabel(keys[0]); b.append(k); }
+    b.addEventListener('click', () => { hideContextMenu(); it.run(); });
+    li.append(b);
+    m.append(li);
+  }
   m.hidden = false;
   const vw = $('#viewer').clientWidth, vh = $('#viewer').clientHeight;
-  m.style.left = `${Math.min(x, vw - m.offsetWidth - 8)}px`;
-  m.style.top = `${Math.min(y, vh - m.offsetHeight - 8)}px`;
+  m.style.left = `${Math.max(4, Math.min(x, vw - m.offsetWidth - 8))}px`;
+  m.style.top = `${Math.max(4, Math.min(y, vh - m.offsetHeight - 8))}px`;
 }
 
 function hideContextMenu() { $('#context-menu').hidden = true; }
 
-$('#context-menu').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-ctx]');
-  if (!b) return;
-  hideContextMenu();
-  ({
-    preview: () => openFrameModal(selection()[0]),
-    marker: () => frameCommand('frames.toggleMarker'),
-    clearOverrides: () => frameCommand('frames.clearOverrides'),
-    delete: deleteSelected,
-  })[b.dataset.ctx]?.();
-});
 document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#context-menu')) hideContextMenu(); });
 
 // ------------------------------------------------------------------ tabs
@@ -822,16 +930,30 @@ const commands = {
   selectPage: () => view.selectPage(),
   selectNone: () => view.selectNone(),
   nextAbnormal,
-  toggleMarker: () => frameCommand('frames.toggleMarker'),
-  merge: () => frameTool('frames.merge'),
-  combine: () => frameTool('frames.combine'),
-  split: () => frameTool('frames.split', { parts: Number($('#split-parts').value) || 2 }),
+  toggleMarker: () => view.selected.size && frameCommand('frames.toggleMarker'),
+  merge: () => view.selected.size && frameTool('frames.merge'),
+  combine: () => view.selected.size && frameTool('frames.combine'),
+  split: () => view.selected.size && frameTool('frames.split', { parts: Number($('#split-parts').value) || 2 }),
   toggleSuggested: () => {
     const sel = selection();
     if (sel.length !== 1) { toast('Select exactly one frame to toggle its suggestion.'); return; }
     return frameCommand('frames.toggleSuggested', { index: sel[0] });
   },
   undo,
+  nextMarker: () => jumpMarker(true),
+  prevMarker: () => jumpMarker(false),
+  toggleAuto: () => { $('#auto-strips').click(); },
+  toggleNumbers: () => { $('#strip-numbers').click(); },
+  toggleCw: () => { $('#rotate-cw').click(); },
+  selectSection: () => { const i = selection()[0]; if (i !== undefined) selectSection(i); },
+  deleteSection: () => { const i = selection()[0]; if (i !== undefined) deleteSection(i); },
+  deleteQuick: () => deleteSelected(false),
+  closeGaps: () => frameTool('frames.closeGaps'),
+  joinClose: () => frameTool('frames.joinClose', { gap: Number($('#join-gap').value) || 0 }),
+  expand: expandSelected,
+  applyTrim,
+  clearExportedSel: () => clearExported(selection()),
+  keysReset: () => { keymap.resetAll(); saveKeymap(); renderKeysEditor(); },
   suggest: () => suggest(0),
   suggestStart: () => suggest(-1),
   suggestEnd: () => suggest(1),
@@ -889,7 +1011,7 @@ const commands = {
     $('#exp-pause span').textContent = state.exportPaused ? 'Resume' : 'Pause';
   },
   exportStop: () => call('export.cancel'),
-  shortcuts: () => { $('#shortcuts-modal').hidden = false; },
+  shortcuts: () => { renderKeysEditor(); $('#shortcuts-modal').hidden = false; },
   shortcutsClose: () => { $('#shortcuts-modal').hidden = true; },
 };
 
@@ -903,58 +1025,100 @@ document.addEventListener('click', (e) => {
 
 // ------------------------------------------------------------------ keyboard
 
+
+// ------------------------------------------------------------------ configurable shortcuts
+
+const keymap = new Keymap();
+let capturing = null;   // command id waiting for a new key in the shortcuts sheet
+
+function saveKeymap() { call('settings.keymap', { bindings: keymap.overrides }).catch((e) => toast(e.message, 'error')); }
+
+function renderKeysEditor() {
+  const box = $('#keys-editor');
+  box.replaceChildren();
+  let lastSection = '';
+  for (const c of COMMANDS) {
+    if (c.section !== lastSection) {
+      const h = document.createElement('h4');
+      h.textContent = c.section;
+      box.append(h);
+      lastSection = c.section;
+    }
+    const row = document.createElement('div');
+    row.className = 'key-row';
+    const label = document.createElement('span');
+    label.className = 'key-label';
+    label.textContent = c.label;
+    const chips = document.createElement('span');
+    chips.className = 'key-chips';
+    for (const k of keymap.keysFor(c.id)) {
+      const chip = document.createElement('span');
+      chip.className = 'key-chip';
+      chip.textContent = keyLabel(k);
+      const x = document.createElement('button');
+      x.textContent = '×';
+      x.title = 'Remove this key';
+      x.addEventListener('click', () => { keymap.unbind(c.id, k); saveKeymap(); renderKeysEditor(); });
+      chip.append(x);
+      chips.append(chip);
+    }
+    const add = document.createElement('button');
+    add.className = 'key-add' + (capturing === c.id ? ' capturing' : '');
+    add.textContent = capturing === c.id ? 'Press a key… (Esc cancels)' : '+';
+    add.addEventListener('click', () => { capturing = c.id; renderKeysEditor(); });
+    chips.append(add);
+    row.append(label, chips);
+    box.append(row);
+  }
+}
+
 function typing(e) {
   return e.target.closest('input, textarea, select, [contenteditable="true"], .toastui-editor-defaultUI');
 }
 
 document.addEventListener('keydown', (e) => {
-  const ctrl = e.ctrlKey || e.metaKey;
-  const k = e.key.toLowerCase();
-  if (ctrl && k === 'o') { e.preventDefault(); commands.open(); return; }
-  if (ctrl && k === 's') { e.preventDefault(); save(e.shiftKey); return; }
-
+  // 1. capturing a new shortcut in the sheet
+  if (capturing) {
+    e.preventDefault();
+    if (e.key === 'Escape') { capturing = null; renderKeysEditor(); return; }
+    const combo = comboFromEvent(e);
+    if (!combo) return;
+    const moved = keymap.bind(capturing, combo);
+    if (moved) toast(`${keyLabel(combo)} moved from "${moved}"`);
+    capturing = null;
+    saveKeymap();
+    renderKeysEditor();
+    return;
+  }
+  // 2. the shortcuts sheet is open
   if (!$('#shortcuts-modal').hidden) {
-    if (e.key === 'Escape' || e.key === '?') commands.shortcutsClose();
+    if (e.key === 'Escape') { e.preventDefault(); commands.shortcutsClose(); }
     return;
   }
-  if (typing(e)) return;
-  if (e.key === '?') { commands.shortcuts(); return; }
-  if (!hasRoll()) return;
-
-  // Shortcuts follow the Lazarus edition (A marker, D delete, X/C pages, F/G markers, E/J/S, Z, Ctrl+Z/A/D).
-  if (ctrl) {
-    const fn = { z: undo, a: () => view.selectAll(), d: () => view.selectNone() }[k];
-    if (fn) { e.preventDefault(); fn(); }
+  // 3. Escape always cancels a drag / clears the selection / closes the menu
+  if (e.key === 'Escape' && !typing(e) && hasRoll()) {
+    e.preventDefault();
+    if (!$('#context-menu').hidden) hideContextMenu();
+    else if (!view.cancelDrag()) view.selectNone();
     return;
   }
-  if (e.altKey) return;
-  const sel = view.selected.size > 0;
-  const map = {
-    escape: () => { if (!view.cancelDrag()) view.selectNone(); hideContextMenu(); },
-    delete: () => deleteSelected(true),
-    d: () => sel && deleteSelected(false),
-    a: () => sel && frameCommand('frames.toggleMarker'),
-    m: () => sel && frameCommand('frames.toggleMarker'),
-    e: () => sel && commands.merge(),
-    j: () => sel && commands.combine(),
-    s: () => sel && commands.split(),
-    z: () => commands.toggleSuggested(),
-    f: () => jumpMarker(true),
-    g: () => jumpMarker(false),
-    enter: () => commands.previewFrame(),
-    c: commands.next, pagedown: commands.next,
-    x: commands.prev, pageup: commands.prev,
-    home: commands.first, end: commands.last,
-    '+': commands.zoomIn, '=': commands.zoomIn, '-': commands.zoomOut,
-  };
-  const fn = map[k];
-  if (fn) { e.preventDefault(); fn(); }
+  // 4. bound commands (Ctrl shortcuts work while typing, single keys do not)
+  const id = keymap.match(e, 'main');
+  if (!id) return;
+  if (typing(e) && !(e.ctrlKey || e.metaKey)) return;
+  const fn = commands[id];
+  if (!fn) return;
+  const noRoll = ['open', 'shortcuts', 'theme'];
+  if (!hasRoll() && !noRoll.includes(id)) return;
+  e.preventDefault();
+  Promise.resolve(fn()).catch(() => {});
 });
 
 // ------------------------------------------------------------------ host events
 
 on('project.dirty', setDirty);
 on('toast', (m) => toast(m));
+on('keymap.changed', (b) => { keymap.setOverrides(b); if (!$('#shortcuts-modal').hidden) renderKeysEditor(); });
 on('theme.changed', (d) => { if (document.documentElement.dataset.theme !== d.theme) applyTheme(d.theme); });
 on('preview.closed', () => $('#strip-canvas').focus());
 
@@ -1007,6 +1171,7 @@ async function init() {
   document.title = `Striplight PRO ${info.version}`;
 
   const s = info.settings;
+  keymap.setOverrides(s.keyBindings || {});
   $('#strips-per-row').value = s.stripsPerRow;
   $('#rotate-cw').checked = s.rotateCw;
   $('#zoom').value = Math.round(s.zoom * 100);

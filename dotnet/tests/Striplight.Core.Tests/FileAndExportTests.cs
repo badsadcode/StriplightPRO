@@ -393,3 +393,62 @@ public class MarkerSuggesterTests
         Assert.Equal(5, MarkerSuggester.ClearSuggestedEvery(f, 29, 1, 2)); // 10 after the anchor, every 2nd
     }
 }
+
+public class FrameRepairTests
+{
+    private static List<FrameRecord> Row(params long[] leads) =>
+        leads.Select((l, i) => new FrameRecord { Index = i, LeadEdge = l, TrailEdge = l + 100, LeftEdge = 10, RightEdge = 90 }).ToList();
+
+    [Fact]
+    public void CloseGapsMeetsInTheMiddle()
+    {
+        var f = Row(0, 200, 400);
+        var (changed, _) = FrameRepair.CloseGaps(f, [0, 1]);
+        Assert.Equal(1, changed);
+        Assert.Equal(150, f[0].TrailEdge);
+        Assert.Equal(150, f[1].LeadEdge);
+        Assert.Equal(400, f[2].LeadEdge); // not selected
+    }
+
+    [Fact]
+    public void JoinCloseRespectsTheGapLimit()
+    {
+        var f = Row(0, 150, 600);       // gaps 50 and 350
+        f[1].IsMarker = true;
+        var (runs, removed, keep) = FrameRepair.JoinClose(f, [0, 1, 2], 100);
+        Assert.Equal((1, 1), (runs, removed));
+        Assert.Equal(2, f.Count);
+        Assert.Equal(250, f[0].TrailEdge);
+        Assert.True(f[0].IsMarker);
+        Assert.Equal(2, keep.Count);
+    }
+
+    [Fact]
+    public void ExpandEachDirectionAndClamp()
+    {
+        var roll = new RollData { StripCount = 1, LengthLines = 1000, WidthPixels = 100 };
+        var f = Row(50);
+        FrameRepair.Expand(f, [0], roll, 20, 30, 15, 40);
+        Assert.Equal((30L, 180L, 0, 100), (f[0].LeadEdge, f[0].TrailEdge, f[0].LeftEdge, f[0].RightEdge));
+    }
+
+    [Fact]
+    public void TrimOnlyTouchesFramesThatStickOut()
+    {
+        var f = Row(0, 200);
+        f[1].LeftEdge = 30; f[1].RightEdge = 60;
+        Assert.Equal(1, FrameRepair.Trim(f, 20, 80));
+        Assert.Equal((20, 80), (f[0].LeftEdge, f[0].RightEdge));
+        Assert.Equal((30, 60), (f[1].LeftEdge, f[1].RightEdge));
+    }
+
+    [Fact]
+    public void SectionFromMarkerToNextMarker()
+    {
+        var f = Row(0, 200, 400, 600, 800);
+        f[1].IsMarker = true; f[3].IsSuggested = true;
+        Assert.Equal((1, 4), FrameRepair.Section(f, 2, includeSuggested: false));
+        Assert.Equal((1, 2), FrameRepair.Section(f, 2, includeSuggested: true));
+        Assert.Equal((-1, -1), FrameRepair.Section(f, 0, false));
+    }
+}

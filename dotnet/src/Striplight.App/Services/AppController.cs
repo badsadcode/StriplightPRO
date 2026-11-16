@@ -181,6 +181,72 @@ public sealed class AppController
             FrameEditor.ToggleSuggested(_project.Frames, BridgeHost.Arg(args, "index", -1));
             return Changed(args);
         });
+        // Repair tools (Lazarus Framing tab): fill gaps, join close, expand, trim, sections.
+        _bridge.On("frames.closeGaps", args =>
+        {
+            PushUndo();
+            var (changed, keep) = FrameRepair.CloseGaps(_project.Frames, Indices(args));
+            Changed(args);
+            return new { frames = _project.Frames, count = changed, select = SelectIndices(keep) };
+        });
+        _bridge.On("frames.joinClose", args =>
+        {
+            PushUndo();
+            var (runs, removed, keep) = FrameRepair.JoinClose(_project.Frames, Indices(args), Math.Max(0, BridgeHost.Arg(args, "gap", 600L)));
+            Changed(args);
+            return new { frames = _project.Frames, runs, count = removed, select = SelectIndices(keep) };
+        });
+        _bridge.On("frames.expand", args =>
+        {
+            PushUndo();
+            var (changed, keep) = FrameRepair.Expand(_project.Frames, Indices(args), _project.Roll,
+                BridgeHost.Arg(args, "lead", 0), BridgeHost.Arg(args, "trail", 0),
+                BridgeHost.Arg(args, "left", 0), BridgeHost.Arg(args, "right", 0));
+            Changed(args);
+            return new { frames = _project.Frames, count = changed, select = SelectIndices(keep) };
+        });
+        _bridge.On("frames.trim", args =>
+        {
+            PushUndo();
+            int n = FrameRepair.Trim(_project.Frames, BridgeHost.Arg(args, "minLeft", 0), BridgeHost.Arg(args, "maxRight", 0));
+            Changed(args);
+            return new { frames = _project.Frames, count = n };
+        });
+        _bridge.On("frames.section", args =>
+        {
+            var (start, end) = FrameRepair.Section(_project.Frames, BridgeHost.Arg(args, "index", -1), BridgeHost.Arg(args, "includeSuggested", true));
+            if (start < 0) throw new BridgeException("No folder marker before this frame.");
+            return new { start, end };
+        });
+        _bridge.On("frames.deleteSection", args =>
+        {
+            var (start, end) = FrameRepair.Section(_project.Frames, BridgeHost.Arg(args, "index", -1), includeSuggested: false);
+            if (start < 0) throw new BridgeException("No yellow marker found before this frame.");
+            PushUndo();
+            int count = end - start + 1;
+            _project.Frames.RemoveRange(start, count);
+            FrameEditor.Refresh(_project.Frames);
+            Changed(args);
+            return new { frames = _project.Frames, count };
+        });
+        _bridge.On("frames.clearExportedOn", args =>
+        {
+            var only = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("indices", out _) ? Indices(args).ToHashSet() : null;
+            for (int i = 0; i < _project.Frames.Count; i++)
+                if (only is null || only.Contains(i)) _project.Frames[i].IsExported = false;
+            _bridge.Emit("frames.changed", new { source = BridgeHost.Arg(args, "source", "main") });
+            return _project.Frames;
+        });
+
+        // User key bindings (command id -> keys); defaults live in wwwroot/js/keymap.js.
+        _bridge.On("settings.keymap", args =>
+        {
+            _settings.KeyBindings = BridgeHost.Arg(args, "bindings", new Dictionary<string, List<string>>());
+            _settings.Save();
+            _bridge.Emit("keymap.changed", _settings.KeyBindings);
+            return null;
+        });
+
         // Folder-marker suggestions (Lazarus "Suggest Markers" and the suggested clean-up tools).
         _bridge.On("markers.suggest", args =>
         {
@@ -379,6 +445,9 @@ public sealed class AppController
         return new { frames = _project.Frames, select = keep.Select(f => _project.Frames.IndexOf(f)).Where(i => i >= 0).ToList() };
     }
 
+    private List<int> SelectIndices(IEnumerable<FrameRecord> keep) =>
+        keep.Select(f => _project.Frames.IndexOf(f)).Where(i => i >= 0).ToList();
+
     private void PushUndo()
     {
         _undo.Add(_project.Frames.Select(f => f.Clone()).ToList());
@@ -423,7 +492,7 @@ public sealed class AppController
             width = quarter ? f.Width : (int)f.Height, height = quarter ? (int)f.Height : f.Width,
             rotation = p.Rotation, mirror = p.FlipH, negative = p.Negative, ownOrientation = f.HasOverride,
             imageVersion = _imageVersion,
-            settings = new { topmost = _settings.PreviewTopmost, step = _settings.PreviewStep, fullQuality = _settings.PreviewFullQuality, theme = _settings.Theme },
+            settings = new { topmost = _settings.PreviewTopmost, step = _settings.PreviewStep, fullQuality = _settings.PreviewFullQuality, theme = _settings.Theme, keyBindings = _settings.KeyBindings },
         };
     }
 
