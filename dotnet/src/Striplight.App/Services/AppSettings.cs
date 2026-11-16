@@ -18,6 +18,7 @@ public sealed class AppSettings
     /// <summary>Fit as many strips per row as the window allows.</summary>
     public bool AutoStrips { get; set; }
     public bool ShowStripNumbers { get; set; }
+    public bool MultiEdit { get; set; }
     /// <summary>Custom shortcuts: command id -> keys (e.g. "Ctrl+S"). Empty = built-in defaults.</summary>
     public Dictionary<string, List<string>> KeyBindings { get; set; } = [];
     /// <summary>"dark" or "light".</summary>

@@ -19,6 +19,7 @@ export const COMMANDS = [
   { id: 'zoomOut', group: 'main', section: 'View', label: 'Zoom out', keys: ['-'] },
   { id: 'toggleAuto', group: 'main', section: 'View', label: 'Auto strips per row on/off', keys: [] },
   { id: 'toggleNumbers', group: 'main', section: 'View', label: 'Strip numbers on/off', keys: [] },
+  { id: 'toggleMulti', group: 'main', section: 'View', label: 'Multi-edit on/off (resize all selected)', keys: [] },
   { id: 'toggleCw', group: 'main', section: 'View', label: 'CW orientation on/off', keys: [] },
   { id: 'theme', group: 'main', section: 'View', label: 'Light / dark theme', keys: [] },
   { id: 'previewFrame', group: 'main', section: 'View', label: 'Open preview window', keys: ['Enter'] },

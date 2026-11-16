@@ -358,7 +358,7 @@ const sendView = debounce(async () => {
   const r = await call('view.set', {
     stripsPerRow: view.stripsPerRow, zoom: view.zoom,
     rotateCw: $('#rotate-cw').checked, frameFillOpacity: view.fillOpacity, autoStrips: view.autoStrips,
-    showStripNumbers: view.showStripNumbers,
+    showStripNumbers: view.showStripNumbers, multiEdit: view.multiEdit,
   }).catch((e) => toast(e.message, 'error'));
   if (r) { state.imageVersion = r.imageVersion; view.setImageVersion(r.imageVersion); }
 }, 200);
@@ -514,6 +514,12 @@ function refreshSplitPreview() {
 }
 $('#split-preview').addEventListener('change', refreshSplitPreview);
 $('#split-parts').addEventListener('input', refreshSplitPreview);
+$('#multi-edit').addEventListener('change', (e) => {
+  view.multiEdit = e.target.checked;
+  view.invalidate();
+  status(view.multiEdit ? 'Multi-edit on: dragging an edge resizes all selected frames' : 'Multi-edit off');
+  sendView();
+});
 $('#strip-numbers').addEventListener('change', (e) => {
   view.setView({ showStripNumbers: e.target.checked });
   sendView();
@@ -952,6 +958,7 @@ const commands = {
   prevMarker: () => jumpMarker(false),
   toggleAuto: () => { $('#auto-strips').click(); },
   toggleNumbers: () => { $('#strip-numbers').click(); },
+  toggleMulti: () => { $('#multi-edit').click(); },
   toggleCw: () => { $('#rotate-cw').click(); },
   selectSection: () => { const i = selection()[0]; if (i !== undefined) selectSection(i); },
   deleteSection: () => { const i = selection()[0]; if (i !== undefined) deleteSection(i); },
@@ -1188,6 +1195,7 @@ async function init() {
   $('#auto-strips').checked = s.autoStrips;
   setFill(s.frameFillOpacity ?? 35, false);
   $('#strip-numbers').checked = s.showStripNumbers;
+  $('#multi-edit').checked = view.multiEdit = !!s.multiEdit;
   applyTheme(s.theme || 'dark');
   view.setView({ stripsPerRow: s.stripsPerRow, zoom: s.zoom, fillOpacity: s.frameFillOpacity, rotateCw: s.rotateCw, autoStrips: s.autoStrips, showStripNumbers: s.showStripNumbers });
   applyRanges(0, true);

@@ -41,6 +41,7 @@ export class StripView {
     this.showStripNumbers = false;
     this.splitPreview = false;    // show where S would cut the selected frames
     this.splitParts = 2;
+    this.multiEdit = false;       // Lazarus "Multi-edit": resizing one selected frame resizes them all
     // Overlays (values in full-resolution pixels, measured from the screen top / bottom of a strip)
     this.trim = { show: false, top: 0, bottom: 0 };     // trim bands (Lazarus "Trim")
     this.area = { show: false, top: 0, bottom: 0 };     // detection ignore area
@@ -443,7 +444,7 @@ export class StripView {
           const tw = ctx.measureText(t).width + 12;
           this.pill(t, g.x2 - tw - 4, g.y2 - 21, COLOR.selected, '#04131c', true);
         }
-        if (i === singleSel && w > 24 && h > 24) this.drawHandles(g);
+        if ((i === singleSel || (this.multiEdit && this.selected.has(i))) && w > 24 && h > 24) this.drawHandles(g);
       }
       if (sel && this.splitPreview) this.drawSplitCuts(f);
     }
@@ -627,7 +628,7 @@ export class StripView {
   hitHandle(x, y) {
     const C = HANDLE + 3; // corners are a little easier to grab
     for (const g of this.segments) {
-      if (!this.selected.has(g.idx) || this.selected.size !== 1) continue;
+      if (!this.selected.has(g.idx) || (this.selected.size !== 1 && !this.multiEdit)) continue;
       const nearL = g.isLead && Math.abs(x - g.x1) <= C, nearR = g.isTrail && Math.abs(x - g.x2) <= C;
       const nearT = Math.abs(y - g.y1) <= C, nearB = Math.abs(y - g.y2) <= C;
       if ((nearL || nearR) && (nearT || nearB)) {
@@ -695,7 +696,9 @@ export class StripView {
 
     const handle = this.hitHandle(x, y);
     if (handle) {
-      this.beginDrag(e, 'resize', film, [handle.idx], handle);
+      // Multi-edit: the grabbed frame leads, every other selected frame follows by the same amount
+      const others = this.multiEdit ? [...this.selected].filter((i) => i !== handle.idx) : [];
+      this.beginDrag(e, 'resize', film, [handle.idx, ...others], handle);
       return;
     }
     const line = this.hitLine(x, y);
@@ -791,13 +794,20 @@ export class StripView {
         f.leftEdge = o.leftEdge + da; f.rightEdge = o.rightEdge + da;
       });
     } else if (d.mode === 'resize') {
-      const f = this.frames[d.indices[0]], o = d.originals[0];
-      for (const edge of d.edges) {
-        if (edge === 'lead') f.leadEdge = Math.min(film.lead, o.trailEdge - minSize);
-        if (edge === 'trail') f.trailEdge = Math.max(film.lead, o.leadEdge + minSize);
-        if (edge === 'left') f.leftEdge = Math.min(film.across, o.rightEdge - minSize);
-        if (edge === 'right') f.rightEdge = Math.max(film.across, o.leftEdge + minSize);
-      }
+      // The grabbed frame's edge follows the pointer; in multi-edit the others move the same
+      // edge by the same amount (Lazarus), each kept inside the roll and at least minSize big.
+      const o0 = d.originals[0];
+      const dLead = film.lead - (d.edges.includes('lead') ? o0.leadEdge : o0.trailEdge);
+      const dAcross = film.across - (d.edges.includes('left') ? o0.leftEdge : o0.rightEdge);
+      d.indices.forEach((idx, k) => {
+        const f = this.frames[idx], o = d.originals[k];
+        for (const edge of d.edges) {
+          if (edge === 'lead') f.leadEdge = Math.max(0, Math.min(o.leadEdge + dLead, o.trailEdge - minSize));
+          if (edge === 'trail') f.trailEdge = Math.min(maxLead, Math.max(o.trailEdge + dLead, o.leadEdge + minSize));
+          if (edge === 'left') f.leftEdge = Math.max(0, Math.min(o.leftEdge + dAcross, o.rightEdge - minSize));
+          if (edge === 'right') f.rightEdge = Math.min(r.widthPixels, Math.max(o.rightEdge + dAcross, o.leftEdge + minSize));
+        }
+      });
     }
     this.invalidate();
     this.updateHover(x, y);

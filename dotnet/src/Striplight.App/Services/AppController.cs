@@ -372,6 +372,7 @@ public sealed class AppController
             _settings.FrameFillOpacity = Math.Clamp(BridgeHost.Arg(args, "frameFillOpacity", _settings.FrameFillOpacity), 0, 100);
             _settings.AutoStrips = BridgeHost.Arg(args, "autoStrips", _settings.AutoStrips);
             _settings.ShowStripNumbers = BridgeHost.Arg(args, "showStripNumbers", _settings.ShowStripNumbers);
+            _settings.MultiEdit = BridgeHost.Arg(args, "multiEdit", _settings.MultiEdit);
             return new { imageVersion = _imageVersion };
         });
         _bridge.On("notes.set", args =>
