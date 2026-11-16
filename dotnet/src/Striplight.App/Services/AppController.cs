@@ -174,7 +174,7 @@ public sealed class AppController
         _bridge.On("frames.merge", args => WithSelection(args, () => FrameEditor.MergePairs(_project.Frames, Indices(args))));
         _bridge.On("frames.combine", args => WithSelection(args, () => FrameEditor.CombineOverlapping(_project.Frames, Indices(args))));
         _bridge.On("frames.split", args => WithSelection(args,
-            () => FrameEditor.Split(_project.Frames, Indices(args), Math.Clamp(BridgeHost.Arg(args, "parts", 2), 2, 20))));
+            () => FrameEditor.Split(_project.Frames, Indices(args), Math.Clamp(BridgeHost.Arg(args, "parts", 2), 2, 10000))));
         _bridge.On("frames.toggleSuggested", args =>
         {
             PushUndo();

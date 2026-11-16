@@ -130,6 +130,12 @@
         </div>
 
         <div class="section">
+          <h3>Display</h3>
+          <div class="slider fill-slider" data-key="fill"><span>Frame fill opacity</span><input type="number" id="fill-num" min="0" max="100" value="35"><input type="range" id="fill-range" min="0" max="100" value="35"></div>
+          <p class="hint">Frames are filled with their state colour: selected, exported, suggested, odd size, folder start, normal. 0 shows outlines only.</p>
+        </div>
+
+        <div class="section">
           <h3>Selection</h3>
           <div class="btn-grid">
             <button class="btn" data-cmd="selectAll" data-needs-roll><i data-icon="check-check"></i>Select all</button>
@@ -153,8 +159,9 @@
           </div>
           <div class="split-row">
             <button class="btn" data-cmd="split" data-needs-sel title="Split each selected frame into equal parts along the film"><i data-icon="split"></i>Split into parts<kbd>S</kbd></button>
-            <input type="number" id="split-parts" min="2" max="20" value="2" aria-label="Parts" title="Number of parts">
+            <input type="number" id="split-parts" min="2" max="10000" value="2" aria-label="Parts" title="Number of parts">
           </div>
+          <label class="switch"><input type="checkbox" id="split-preview"><span></span>Show split lines on selected frames</label>
           <p class="hint"><i data-icon="square-dashed-mouse-pointer"></i>Drag a frame to move it, drag an edge to resize, drag on empty film to draw a new frame. Ctrl-click adds, Shift-click selects a range.</p>
         </div>
 

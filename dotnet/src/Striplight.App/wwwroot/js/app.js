@@ -371,6 +371,25 @@ $('#strips-per-row').addEventListener('change', (e) => {
   view.setView({ stripsPerRow: Number(e.target.value) || 4, autoStrips: false });
   sendView();
 });
+// Frame fill opacity (0 = outlines only).
+function setFill(v, persist = true) {
+  v = Math.max(0, Math.min(100, Number(v) || 0));
+  $('#fill-num').value = $('#fill-range').value = v;
+  paintRange($('#fill-range'));
+  view.setView({ fillOpacity: v });
+  if (persist) sendView();
+}
+$('#fill-range').addEventListener('input', (e) => setFill(e.target.value));
+$('#fill-num').addEventListener('change', (e) => setFill(e.target.value));
+
+// Split preview (Lazarus): dashed lines where S would cut the selected frames.
+function refreshSplitPreview() {
+  view.splitPreview = $('#split-preview').checked;
+  view.splitParts = Math.max(2, Number($('#split-parts').value) || 2);
+  view.invalidate();
+}
+$('#split-preview').addEventListener('change', refreshSplitPreview);
+$('#split-parts').addEventListener('input', refreshSplitPreview);
 $('#strip-numbers').addEventListener('change', (e) => {
   view.setView({ showStripNumbers: e.target.checked });
   sendView();
@@ -462,7 +481,7 @@ $('#tone-method').addEventListener('change', (e) => {
   lastMethod = m;
   sendProcess();
 });
-$$('.slider').forEach((el) => {
+$$('.slider:not(.fill-slider)').forEach((el) => {
   const [r, n] = sliderInputs(el);
   r.addEventListener('input', () => { n.value = r.value; sendProcess(); });
   n.addEventListener('change', () => {
@@ -898,6 +917,7 @@ async function init() {
   paintRange($('#zoom'));
   $('#zoom-out').textContent = `${Math.round(s.zoom * 100)}%`;
   $('#auto-strips').checked = s.autoStrips;
+  setFill(s.frameFillOpacity ?? 35, false);
   $('#strip-numbers').checked = s.showStripNumbers;
   applyTheme(s.theme || 'dark');
   view.setView({ stripsPerRow: s.stripsPerRow, zoom: s.zoom, fillOpacity: s.frameFillOpacity, rotateCw: s.rotateCw, autoStrips: s.autoStrips, showStripNumbers: s.showStripNumbers });

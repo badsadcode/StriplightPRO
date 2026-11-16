@@ -292,6 +292,8 @@ input[type="range"]:hover::-webkit-slider-thumb { box-shadow: 0 0 0 6px rgba(245
 #strip-canvas.ew { cursor: ew-resize; }
 #strip-canvas.ns { cursor: ns-resize; }
 #strip-canvas.draw { cursor: crosshair; }
+#strip-canvas.nwse { cursor: nwse-resize; }
+#strip-canvas.nesw { cursor: nesw-resize; }
 
 .viewbar {
   position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 5;
@@ -326,12 +328,12 @@ input[type="range"]:hover::-webkit-slider-thumb { box-shadow: 0 0 0 6px rgba(245
 }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .sw { width: 9px; height: 9px; border-radius: 3px; border: 2px solid; }
-.sw.normal { border-color: var(--f-normal); }
-.sw.abnormal { border-color: var(--f-abnormal); }
-.sw.marker { border-color: var(--f-marker); background: var(--f-marker); }
-.sw.suggested { border-color: var(--f-suggested); border-style: dashed; }
+.sw.normal { border-color: var(--f-normal); background: color-mix(in srgb, var(--f-normal) 35%, transparent); }
+.sw.abnormal { border-color: var(--f-abnormal); background: color-mix(in srgb, var(--f-abnormal) 35%, transparent); }
+.sw.marker { border-color: var(--f-marker); background: color-mix(in srgb, var(--f-marker) 45%, transparent); }
+.sw.suggested { border-color: var(--f-suggested); border-style: dashed; background: color-mix(in srgb, var(--f-suggested) 35%, transparent); }
 .sw.selected { border-color: var(--f-selected); background: rgba(56,189,248,.3); }
-.sw.exported { border-color: var(--f-exported); }
+.sw.exported { border-color: var(--f-exported); background: color-mix(in srgb, var(--f-exported) 35%, transparent); }
 #scrubber {
   width: 100%; height: 30px; border-radius: 10px; pointer-events: auto; cursor: pointer;
   background: var(--glass-2); backdrop-filter: blur(10px); border: 1px solid var(--border);

@@ -39,6 +39,8 @@ export class StripView {
     this.rotateCw = false;        // false: strips turned CCW (default), true: CW + mirror
     this.autoStrips = false;      // fit as many strips per row as the canvas allows
     this.showStripNumbers = false;
+    this.splitPreview = false;    // show where S would cut the selected frames
+    this.splitParts = 2;
     this.refreshTheme();
     this.imageVersion = 1;
     this.images = new Map();      // stripIdx -> { img, version, state }
@@ -374,7 +376,8 @@ export class StripView {
 
   drawFrames() {
     const ctx = this.ctx;
-    const fill = Math.max(0, Math.min(1, this.fillOpacity / 100)) * 0.32;
+    // Solid, semi-transparent fill in the frame's state colour. 100% still lets the page show through.
+    const fill = Math.max(0, Math.min(1, this.fillOpacity / 100)) * 0.7;
     const singleSel = this.selected.size === 1 ? [...this.selected][0] : -1;
     // Folder number of each marker (frames are sorted along the film).
     const folderOf = new Map();
@@ -387,15 +390,18 @@ export class StripView {
       const segs = this.frameSegments(f);
       if (!segs.length) continue;
       const sel = this.selected.has(i);
+      // State colour, most important first: selected, exported, suggested, odd size, folder, normal.
       const color = sel ? COLOR.selected
         : f.isExported ? COLOR.exported
+        : f.isSuggested ? COLOR.suggested
         : (f.isOversized || f.isUndersized) ? COLOR.abnormal
+        : f.isMarker ? COLOR.marker
         : COLOR.normal;
       for (const g of segs) {
         this.segments.push({ idx: i, ...g });
         const w = g.x2 - g.x1, h = g.y2 - g.y1;
-        if (fill > 0 || sel) {
-          ctx.globalAlpha = sel ? Math.max(fill, 0.16) : fill;
+        if (fill > 0) {
+          ctx.globalAlpha = fill;
           ctx.fillStyle = color;
           ctx.beginPath();
           ctx.roundRect(g.x1, g.y1, w, h, 3);
@@ -405,7 +411,7 @@ export class StripView {
         ctx.save();
         if (sel) { ctx.shadowColor = COLOR.selected; ctx.shadowBlur = 12; }
         ctx.lineWidth = sel ? 2 : 1.5;
-        ctx.strokeStyle = f.isSuggested && !sel ? COLOR.suggested : color;
+        ctx.strokeStyle = color;
         ctx.setLineDash(f.isSuggested ? [5, 4] : []);
         ctx.beginPath();
         ctx.roundRect(g.x1 + 1, g.y1 + 1, Math.max(0, w - 2), Math.max(0, h - 2), 3);
@@ -434,6 +440,7 @@ export class StripView {
         }
         if (i === singleSel && w > 24 && h > 24) this.drawHandles(g);
       }
+      if (sel && this.splitPreview) this.drawSplitCuts(f);
     }
   }
 
@@ -449,10 +456,47 @@ export class StripView {
       ctx.strokeStyle = COLOR.selected;
       ctx.stroke();
     };
-    if (g.isLead) dot(g.x1, my);
-    if (g.isTrail) dot(g.x2, my);
+    const corner = (x, y) => {
+      ctx.fillStyle = '#fff';
+      ctx.strokeStyle = COLOR.selected;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(x - 4.5, y - 4.5, 9, 9, 2);
+      ctx.fill();
+      ctx.stroke();
+    };
+    if (g.isLead) { dot(g.x1, my); corner(g.x1, g.y1); corner(g.x1, g.y2); }
+    if (g.isTrail) { dot(g.x2, my); corner(g.x2, g.y1); corner(g.x2, g.y2); }
     dot(mx, g.y1);
     dot(mx, g.y2);
+  }
+
+  /** Split preview (Lazarus): dashed cut lines where S would split each selected frame. */
+  drawSplitCuts(f) {
+    const n = this.splitParts;
+    const part = Math.floor((f.trailEdge - f.leadEdge) / n);
+    if (n < 2 || part < 1) return;
+    const ctx = this.ctx, ll = this.roll.lengthLines;
+    const first = this.firstStrip, last = first + this.pageStripCount - 1;
+    for (let k = 1; k < n; k++) {
+      const cut = f.leadEdge + k * part;
+      const s = Math.floor(cut / ll);
+      if (s < first || s > last) continue;
+      const r = this.stripRect(s - first);
+      const x = Math.round(r.x + (cut - s * ll) * this.pxPerLine) + 0.5;
+      const ya = r.y + this.acrossToY(f.leftEdge), yb = r.y + this.acrossToY(f.rightEdge);
+      const y1 = Math.max(r.y, Math.min(ya, yb)), y2 = Math.min(r.y + r.h, Math.max(ya, yb));
+      if (y2 <= y1) continue;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([]);
+      ctx.strokeStyle = 'rgba(0,0,0,.75)';
+      ctx.beginPath(); ctx.moveTo(x + 1, y1); ctx.lineTo(x + 1, y2); ctx.stroke();
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.strokeStyle = '#fff';
+      ctx.beginPath(); ctx.moveTo(x, y1); ctx.lineTo(x, y2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
   }
 
   drawRubberBand() {
@@ -485,15 +529,28 @@ export class StripView {
   }
 
   /** Edge handle of a selected frame under the point: 'lead' | 'trail' | 'left' | 'right' | null. */
+  /**
+   * Edge or corner handle of the selected frame under the point.
+   * Returns { idx, edges: ['lead'|'trail'|'left'|'right', ...], cursor } or null.
+   * Corners (two edges at once) are checked first so diagonal resizing wins near them.
+   */
   hitHandle(x, y) {
+    const C = HANDLE + 3; // corners are a little easier to grab
     for (const g of this.segments) {
       if (!this.selected.has(g.idx) || this.selected.size !== 1) continue;
+      const nearL = g.isLead && Math.abs(x - g.x1) <= C, nearR = g.isTrail && Math.abs(x - g.x2) <= C;
+      const nearT = Math.abs(y - g.y1) <= C, nearB = Math.abs(y - g.y2) <= C;
+      if ((nearL || nearR) && (nearT || nearB)) {
+        const edges = [nearL ? 'lead' : 'trail', nearT ? this.topEdge : this.bottomEdge];
+        const cursor = (nearL && nearT) || (nearR && nearB) ? 'nwse' : 'nesw';
+        return { idx: g.idx, edges, cursor };
+      }
       const inY = y >= g.y1 - HANDLE && y <= g.y2 + HANDLE;
       const inX = x >= g.x1 - HANDLE && x <= g.x2 + HANDLE;
-      if (g.isLead && inY && Math.abs(x - g.x1) <= HANDLE) return { idx: g.idx, edge: 'lead' };
-      if (g.isTrail && inY && Math.abs(x - g.x2) <= HANDLE) return { idx: g.idx, edge: 'trail' };
-      if (inX && Math.abs(y - g.y1) <= HANDLE) return { idx: g.idx, edge: this.topEdge };
-      if (inX && Math.abs(y - g.y2) <= HANDLE) return { idx: g.idx, edge: this.bottomEdge };
+      if (g.isLead && inY && Math.abs(x - g.x1) <= HANDLE) return { idx: g.idx, edges: ['lead'], cursor: 'ew' };
+      if (g.isTrail && inY && Math.abs(x - g.x2) <= HANDLE) return { idx: g.idx, edges: ['trail'], cursor: 'ew' };
+      if (inX && Math.abs(y - g.y1) <= HANDLE) return { idx: g.idx, edges: [this.topEdge], cursor: 'ns' };
+      if (inX && Math.abs(y - g.y2) <= HANDLE) return { idx: g.idx, edges: [this.bottomEdge], cursor: 'ns' };
     }
     return null;
   }
@@ -548,7 +605,7 @@ export class StripView {
 
     const handle = this.hitHandle(x, y);
     if (handle) {
-      this.beginDrag(e, 'resize', film, [handle.idx], handle.edge);
+      this.beginDrag(e, 'resize', film, [handle.idx], handle);
       return;
     }
     const hit = this.hitFrame(x, y);
@@ -565,10 +622,10 @@ export class StripView {
     else if (!e.ctrlKey) this.selectNone();
   }
 
-  beginDrag(e, mode, film, indices, edge = null) {
+  beginDrag(e, mode, film, indices, handle = null) {
     this.canvas.setPointerCapture(e.pointerId);
     this.drag = {
-      mode, edge, indices, moved: false,
+      mode, edges: handle?.edges ?? [], cursor: handle?.cursor ?? '', indices, moved: false,
       startX: e.clientX, startY: e.clientY, startFilm: film, curFilm: film,
       originals: indices.map((i) => ({ ...this.frames[i] })),
     };
@@ -604,10 +661,12 @@ export class StripView {
       });
     } else if (d.mode === 'resize') {
       const f = this.frames[d.indices[0]], o = d.originals[0];
-      if (d.edge === 'lead') f.leadEdge = Math.min(film.lead, o.trailEdge - minSize);
-      if (d.edge === 'trail') f.trailEdge = Math.max(film.lead, o.leadEdge + minSize);
-      if (d.edge === 'left') f.leftEdge = Math.min(film.across, o.rightEdge - minSize);
-      if (d.edge === 'right') f.rightEdge = Math.max(film.across, o.leftEdge + minSize);
+      for (const edge of d.edges) {
+        if (edge === 'lead') f.leadEdge = Math.min(film.lead, o.trailEdge - minSize);
+        if (edge === 'trail') f.trailEdge = Math.max(film.lead, o.leadEdge + minSize);
+        if (edge === 'left') f.leftEdge = Math.min(film.across, o.rightEdge - minSize);
+        if (edge === 'right') f.rightEdge = Math.max(film.across, o.leftEdge + minSize);
+      }
     }
     this.invalidate();
     this.updateHover(x, y);
@@ -681,10 +740,10 @@ export class StripView {
   updateHover(x, y) {
     const handle = !this.drag && this.hitHandle(x, y);
     const cls = this.drag ? (this.drag.mode === 'draw' ? 'draw' : this.drag.mode === 'move' ? 'move' : '')
-      : handle ? (handle.edge === 'lead' || handle.edge === 'trail' ? 'ew' : 'ns')
+      : handle ? handle.cursor
       : this.hitFrame(x, y) >= 0 ? 'move' : '';
     this.canvas.className = cls;
-    if (this.drag?.mode === 'resize') this.canvas.className = this.drag.edge === 'lead' || this.drag.edge === 'trail' ? 'ew' : 'ns';
+    if (this.drag?.mode === 'resize') this.canvas.className = this.drag.cursor;
 
     const film = this.screenToFilm(x, y, false);
     if (!film) { this.cb.onHover?.(''); return; }
