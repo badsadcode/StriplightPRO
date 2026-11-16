@@ -1,5 +1,5 @@
-# Compiler output and executables
-/lib/
+# --- Lazarus / Free Pascal (lazarus/) ---
+lazarus/lib/
 *.exe
 *.o
 *.obj
@@ -10,15 +10,23 @@
 *.dbg
 *.rst
 *.rsj
-# Local IDE state and scratch files
 *.lps
 *.bak
 *~
-/backup/
-/.compile-check-config/
+lazarus/backup/
+lazarus/.compile-check-config/
 *.log
+
+# --- .NET (dotnet/) ---
+bin/
+obj/
+*.user
+.vs/
+TestResults/
+publish/
+
 # Archives and local data
 *.zip
 *.7z
 /libjpeg-turbo-*/
-/*_sample_*.jpg
+*_sample_*.jpg

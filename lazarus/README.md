@@ -1,4 +1,6 @@
-# Striplight
+# Striplight (Lazarus edition)
+
+> This folder holds the original Lazarus / Free Pascal Striplight. It is kept as-is and is built separately from the C# / WPF edition in `../dotnet/`. Run the commands below from this `lazarus/` folder.
 
 Windows desktop tools for reviewing scanned microfilm strips, detecting and adjusting frame boundaries, and exporting frame images. Built with Lazarus and Free Pascal.
 
@@ -39,7 +41,7 @@ Keep `libturbojpeg.dll` beside `Striplight.exe`. The included DLL is the Windows
 - `docs/tone_methods_and_fast_export.md`: the adaptive tone methods and the fast export path.
 - `uStandaloneCacheManager.pas`: cache-manager interface.
 - `unit1.pas` / `.lfm`: preserved original starter form, unused by the current projects.
-- `assets/`: original icon and artwork assets.
+- `../assets/`: original icon and artwork assets (shared with the C# edition).
 - `future_export_and_detection_ideas.md`: historical design ideas; not a description of current feature completeness.
 - `docs/striplight_curve_csv_analysis.md` and `docs/curve.csv`: tone-curve analysis and its input data.
 - `docs/BACKUP.md`: backup scope and verification record.
