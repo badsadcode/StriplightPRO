@@ -115,7 +115,8 @@ export class StripView {
 
   layout() {
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
-    this.stripW = Math.round(BASE_STRIP_W * this.zoom);
+    // Zoomed strip width, but never wider than the canvas allows (small screens).
+    this.stripW = Math.max(24, Math.min(Math.round(BASE_STRIP_W * this.zoom), Math.floor((w - 32) / this.stripsPerRow)));
     const r = this.roll;
     if (r && r.widthPixels > 0 && r.lengthLines > 0) {
       const ds = Math.max(1, r.previewDownScale);
