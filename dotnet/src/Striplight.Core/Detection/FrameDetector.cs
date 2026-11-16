@@ -37,6 +37,35 @@ public sealed record DetectOptions
     public bool Invert { get; init; }
     /// <summary>Pick the threshold per strip from its histogram (Otsu); falls back to <see cref="Threshold"/> on strips without clear frames.</summary>
     public bool AutoThreshold { get; init; }
+    /// <summary>
+    /// Continue after Stop: the frame that was still open at the stop point. Detection starts
+    /// with it, so it can grow into the next strip instead of being cut in two.
+    /// </summary>
+    public FrameRecord? Seed { get; init; }
+}
+
+/// <summary>Pause / stop for a running detection (Cancel stays the CancellationToken).</summary>
+public sealed class DetectControl
+{
+    private readonly ManualResetEventSlim _running = new(true);
+    private volatile bool _stop;
+
+    public bool Paused => !_running.IsSet;
+    public bool StopRequested => _stop;
+    /// <summary>Last strip that was fully read (-1 = none yet).</summary>
+    public int LastStrip { get; internal set; } = -1;
+    /// <summary>
+    /// After a stop: the last frame as detected (before max-length split and overscan) when it
+    /// reaches the end of the last strip read, i.e. it may continue in the next strip. Null otherwise.
+    /// </summary>
+    public FrameRecord? OpenFrame { get; internal set; }
+
+    public void Pause() => _running.Reset();
+    public void Resume() => _running.Set();
+    /// <summary>Finish after the current strip and keep what was found.</summary>
+    public void Stop() { _stop = true; _running.Set(); }
+
+    internal void WaitWhilePaused(CancellationToken cancel) => _running.Wait(cancel);
 }
 
 /// <summary>
@@ -57,9 +86,10 @@ public static class FrameDetector
     /// <param name="loadPreview">Returns the decoded preview for a strip, or null if missing.</param>
     public static List<FrameRecord> Detect(RollData roll, DetectOptions options,
         Func<int, DecodedImage?> loadPreview, IProgress<DetectProgress>? progress = null,
-        CancellationToken cancel = default)
+        CancellationToken cancel = default, DetectControl? control = null)
     {
         var frames = new List<FrameRecord>();
+        if (options.Seed is { } seed) frames.Add(seed.Clone());
         if (!roll.Loaded || roll.StripCount <= 0) return frames;
 
         int from = Math.Clamp(options.StripFrom, 0, roll.StripCount - 1);
@@ -72,6 +102,11 @@ public static class FrameDetector
         for (int strip = from; strip <= to; strip++)
         {
             cancel.ThrowIfCancellationRequested();
+            if (control is not null)
+            {
+                control.WaitWhilePaused(cancel);
+                if (control.StopRequested) break;
+            }
             cur++;
             DecodedImage? img = null;
             try { img = loadPreview(strip); }
@@ -84,6 +119,7 @@ public static class FrameDetector
                 read++;
                 DetectInStrip(roll, options, strip, img, lumLut, frames);
             }
+            if (control is not null) control.LastStrip = strip;
             if (progress is not null)
             {
                 int fromIdx = Math.Max(0, reported - 1);
@@ -91,6 +127,12 @@ public static class FrameDetector
                 reported = frames.Count;
                 progress.Report(new DetectProgress(cur, total, read, missing, frames.Count, strip, fromIdx, slice));
             }
+        }
+        if (control is { StopRequested: true } && frames.Count > 0 && control.LastStrip < to)
+        {
+            var last = frames[^1];
+            long stripEnd = (long)(control.LastStrip + 1) * roll.LengthLines;
+            if (last.TrailEdge >= stripEnd - Math.Max(0, options.MergeAcrossGaps)) control.OpenFrame = last.Clone();
         }
         return PostProcess(roll, options, frames);
     }

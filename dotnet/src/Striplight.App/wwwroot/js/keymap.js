@@ -49,6 +49,9 @@ export const COMMANDS = [
   { id: 'clearExportedSel', group: 'main', section: 'Edit', label: 'Clear exported mark on selected', keys: [] },
   // ---- main window: detection, markers, export
   { id: 'detect', group: 'main', section: 'Detect & export', label: 'Detect frames', keys: [] },
+  { id: 'detectPause', group: 'main', section: 'Detect & export', label: 'Pause / resume detection', keys: [] },
+  { id: 'detectStop', group: 'main', section: 'Detect & export', label: 'Stop detection (keep frames)', keys: [] },
+  { id: 'detectContinue', group: 'main', section: 'Detect & export', label: 'Continue stopped detection', keys: [] },
   { id: 'suggest', group: 'main', section: 'Detect & export', label: 'Suggest markers', keys: [] },
   { id: 'selectSuggested', group: 'main', section: 'Detect & export', label: 'Select suggested', keys: [] },
   { id: 'acceptSuggested', group: 'main', section: 'Detect & export', label: 'Make suggested into markers', keys: [] },

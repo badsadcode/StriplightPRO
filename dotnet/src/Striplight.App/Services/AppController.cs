@@ -45,6 +45,10 @@ public sealed class AppController
     private int _imageVersion = 1;
 
     private CancellationTokenSource? _detectCts;
+    private DetectControl? _detectControl;
+    /// <summary>After Stop: what Continue needs (the original options, the next strip, the open frame).</summary>
+    private sealed record DetectResume(RollData Roll, DetectOptions Options, int NextStrip, FrameRecord? OpenFrame, long ReplaceFrom);
+    private DetectResume? _detectResume;
     private CancellationTokenSource? _exportCts;
     private ExportEngine? _exportEngine;
 
@@ -473,6 +477,10 @@ public sealed class AppController
 
         _bridge.OnAsync("detect.run", args => RunDetectionAsync(BridgeHost.Args<DetectDto>(args)));
         _bridge.On("detect.cancel", _ => { _detectCts?.Cancel(); return null; });
+        _bridge.On("detect.pause", _ => { _detectControl?.Pause(); return null; });
+        _bridge.On("detect.resume", _ => { _detectControl?.Resume(); return null; });
+        _bridge.On("detect.stop", _ => { _detectControl?.Stop(); return null; });
+        _bridge.OnAsync("detect.continue", _ => ContinueDetectionAsync());
 
         _bridge.On("export.start", args => StartExport(BridgeHost.Args<ExportDto>(args)));
         _bridge.On("export.preview", args => PreviewExportPath(BridgeHost.Arg(args, "index", 0), BridgeHost.Args<ExportDto>(args)));
@@ -803,9 +811,26 @@ public sealed class AppController
         roll.DetectionThreshold = d.Threshold;
         roll.DetectMinWidth = d.MinWidth;
         roll.DetectMinLength = d.MinLength;
+        _detectResume = null;
+        return await DetectCoreAsync(options, null);
+    }
 
+    /// <summary>Continue a stopped detection from the next strip, finishing the frame that was open.</summary>
+    private Task<object?> ContinueDetectionAsync()
+    {
+        if (_detectCts is not null) throw new BridgeException(Loc.T("Detection is already running."));
+        var r = _detectResume;
+        if (r is null || !ReferenceEquals(r.Roll, _project.Roll)) throw new BridgeException(Loc.T("There is no stopped detection to continue."));
+        return DetectCoreAsync(r.Options with { StripFrom = r.NextStrip, Seed = r.OpenFrame }, r);
+    }
+
+    private async Task<object?> DetectCoreAsync(DetectOptions options, DetectResume? resume)
+    {
+        var roll = _project.Roll;
         var rollCopy = roll.Clone();
         _detectCts = new CancellationTokenSource();
+        _detectControl = new DetectControl();
+        var control = _detectControl;
         long lastEmit = 0;
         var live = new List<FrameRecord>();   // frames detected so far (copies)
         int sent = 0;                          // how many of them the page already has
@@ -837,20 +862,41 @@ public sealed class AppController
                     string p = RollPaths.PreviewFilePath(rollCopy, i);
                     return File.Exists(p) ? TurboJpeg.DecodeFile(p, TurboJpeg.PixelFormatBgra) : null;
                 },
-                progress, _detectCts.Token));
-            PushUndo();
-            FrameEditor.ReplaceDetectedRange(_project.Frames, found, options.StripFrom, options.StripTo, roll.LengthLines);
-            MarkDirty();
-            _bridge.Emit("frames.changed", new { source = "main" });
+                progress, _detectCts.Token, control));
+
+            // Stop keeps what was found: the result covers only the strips actually read.
+            bool stopped = control.StopRequested && control.LastStrip < options.StripTo;
+            int end = stopped ? control.LastStrip : options.StripTo;
+            if (end >= options.StripFrom || resume is not null)
+            {
+                PushUndo();
+                long ll = roll.LengthLines;
+                // Continue: the frame that was open at the stop point is in the new result (grown).
+                if (resume is not null)
+                    _project.Frames.RemoveAll(f => f.LeadEdge >= resume.ReplaceFrom && f.LeadEdge < options.StripFrom * ll);
+                if (end >= options.StripFrom)
+                    FrameEditor.ReplaceDetectedRange(_project.Frames, found, options.StripFrom, end, roll.LengthLines);
+                else { _project.Frames.AddRange(found.Where(f => f.LeadEdge < options.StripFrom * ll)); FrameEditor.Refresh(_project.Frames); }
+                MarkDirty();
+                _bridge.Emit("frames.changed", new { source = "main" });
+            }
+            _detectResume = stopped
+                ? new DetectResume(roll, options with { Seed = null }, Math.Max(options.StripFrom, control.LastStrip + 1), control.OpenFrame,
+                    control.OpenFrame is { } open ? Math.Max(0, open.LeadEdge - Math.Max(0, options.OverscanLengthPx)) : long.MaxValue)
+                : null;
+            if (_detectResume is not null && resume is not null)
+                _detectResume = _detectResume with { Options = resume.Options };   // keep the original range end
             // Read vs. missing previews make path problems visible (e.g. previews on another share).
             int read = 0, missing = 0;
-            for (int i = options.StripFrom; i <= options.StripTo; i++)
+            for (int i = options.StripFrom; i <= end; i++)
                 if (File.Exists(RollPaths.PreviewFilePath(rollCopy, i))) read++; else missing++;
             return new
             {
                 frames = _project.Frames, found = found.Count, read, missing,
                 previewFolder = Path.GetDirectoryName(RollPaths.PreviewFilePath(rollCopy, options.StripFrom)),
                 threshold = options.Threshold,
+                stopped, nextStrip = _detectResume?.NextStrip ?? -1, stripTo = options.StripTo,
+                replaceFrom = _detectResume?.ReplaceFrom ?? -1,
             };
         }
         catch (OperationCanceledException)
@@ -861,6 +907,7 @@ public sealed class AppController
         {
             _detectCts.Dispose();
             _detectCts = null;
+            _detectControl = null;
         }
     }
 

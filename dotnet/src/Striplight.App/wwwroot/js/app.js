@@ -112,6 +112,11 @@ function refreshEnabled() {
   $$('[data-needs-sel]').forEach((el) => { el.disabled = !roll || !sel; });
   $('#det-run').disabled = !roll || state.detecting;
   $('#det-cancel').disabled = !state.detecting;
+  // While detecting: Pause / Stop / Cancel. After a stop: Continue.
+  for (const id of ['#det-pause', '#det-stop', '#det-cancel']) $(id).hidden = !state.detecting;
+  $('#det-pause').disabled = $('#det-stop').disabled = !state.detecting;
+  $('#det-continue').hidden = !detectResume || state.detecting;
+  $('#det-continue').disabled = !roll;
   $('#exp-start').disabled = !roll || state.exporting;
   $('#exp-pause').disabled = !state.exporting;
   $('#exp-stop').disabled = !state.exporting;
@@ -147,6 +152,7 @@ function applySession(s) {
   $('#tone-target').value = 'all';
   loadProcess(s.process);
   refreshToneTarget();
+  detectResume = null;
   loadExport(s.export, s.defaultOutputRoot);
   refreshOverlays();
   setNotes(s.notes);
@@ -823,19 +829,39 @@ async function detect() {
       overscanWidth: Number($('#det-osw').value) || 0, overscanLength: Number($('#det-osl').value) || 0,
     } : {}),
   };
-  state.detecting = true;
-  refreshEnabled();
-  startLiveDetect(args.stripFrom, args.stripTo);
-  setBar('#det-bar', 0, 1);
+  detectResume = null;
   $('#det-status').textContent = wholeRoll ? t('Starting · whole roll…') : t('Starting · strips {a}–{b}…', { a: args.stripFrom + 1, b: args.stripTo + 1 });
+  await runDetection('detect.run', args, args.stripFrom, args.stripTo, -1);
+}
+
+/** Continue a stopped detection (from the strip after the stop point to the original end). */
+async function detectContinue() {
+  if (!hasRoll() || state.detecting || !detectResume) return;
+  const r = detectResume;
+  $('#det-status').textContent = t('Continuing from strip {n}…', { n: r.nextStrip + 1 });
+  await runDetection('detect.continue', {}, r.nextStrip, r.stripTo, r.replaceFrom);
+}
+
+let detectResume = null;   // { nextStrip, stripTo, replaceFrom } after Stop
+
+async function runDetection(cmd, args, fromStrip, toStrip, replaceFrom) {
+  state.detecting = true;
+  state.detectPaused = false;
+  $('#det-pause span').textContent = t('Pause');
+  refreshEnabled();
+  startLiveDetect(fromStrip, toStrip, replaceFrom);
+  setBar('#det-bar', 0, 1);
   try {
-    const r = await call('detect.run', args);
+    const r = await call(cmd, args);
     applyFrames(r.frames, []);
-    const msg = r.found < 0 ? t('Detection cancelled')
-      : `${tn(r.found, 'Found {n} frame', 'Found {n} frames')} · ${tn(r.read, '{n} preview read', '{n} previews read')}` +
+    detectResume = r.stopped ? { nextStrip: r.nextStrip, stripTo: r.stripTo, replaceFrom: r.replaceFrom } : null;
+    const found = `${tn(r.found, 'Found {n} frame', 'Found {n} frames')} · ${tn(r.read ?? 0, '{n} preview read', '{n} previews read')}` +
         (r.missing ? ` · ${t('{n} missing in {folder}', { n: r.missing.toLocaleString(), folder: r.previewFolder })}` : '');
+    const msg = r.found < 0 ? t('Detection cancelled')
+      : r.stopped ? `${t('Stopped before strip {n}', { n: r.nextStrip + 1 })} · ${found}`
+        : found;
     $('#det-status').textContent = msg;
-    setBar('#det-bar', 1, 1);
+    setBar('#det-bar', r.stopped ? 0 : 1, 1);
     status(msg);
   } catch (err) {
     $('#det-status').textContent = err.message;
@@ -852,11 +878,13 @@ async function detect() {
 // Live detection: frames outside the range stay, frames inside are replaced as they are found.
 let liveDetect = null;   // { base: frames outside the range, found: detected so far, from, to }
 
-function startLiveDetect(fromStrip, toStrip) {
+function startLiveDetect(fromStrip, toStrip, replaceFrom = -1) {
   if (!$('#det-live').checked) { liveDetect = null; return; }
   const ll = state.session.roll.lengthLines;
   const base = view.frames.filter((f) => {
     const s = Math.floor(f.leadEdge / ll);
+    // on Continue the open frame (from replaceFrom) comes back grown in the results
+    if (replaceFrom >= 0 && f.leadEdge >= replaceFrom && f.leadEdge < fromStrip * ll) return false;
     return s < fromStrip || s > toStrip;
   });
   liveDetect = { base, found: [] };
@@ -1242,7 +1270,16 @@ const commands = {
     toneSelectionChanged();
   },
   detect,
-  detectCancel: () => call('detect.cancel'),
+  detectCancel: () => { detectResume = null; return call('detect.cancel'); },
+  detectPause: async () => {
+    if (!state.detecting) return;
+    state.detectPaused = !state.detectPaused;
+    await call(state.detectPaused ? 'detect.pause' : 'detect.resume').catch(() => {});
+    $('#det-pause span').textContent = state.detectPaused ? t('Resume') : t('Pause');
+    if (state.detectPaused) $('#det-status').textContent = `${t('Paused')} · ${$('#det-status').textContent}`;
+  },
+  detectStop: () => state.detecting && call('detect.stop').catch(() => {}),
+  detectContinue,
   detectDefaults: () => {
     for (const [id, v] of [['#det-minrun', 0], ['#det-maxlen', 0], ['#det-touchw', 0], ['#det-osw', 0], ['#det-osl', 0]]) $(id).value = v;
     $('#det-touchl').value = hasRoll() ? Math.floor(state.session.roll.lengthLines / 64) : 64;

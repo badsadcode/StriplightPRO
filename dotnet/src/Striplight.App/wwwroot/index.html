@@ -273,7 +273,12 @@
         <div class="section run-card">
           <div class="btn-row">
             <button class="btn btn-primary grow" data-cmd="detect" id="det-run"><i data-icon="scan"></i>Detect frames</button>
-            <button class="btn" data-cmd="detectCancel" id="det-cancel" disabled><i data-icon="square"></i>Cancel</button>
+          </div>
+          <div class="btn-row det-controls">
+            <button class="btn grow" data-cmd="detectPause" id="det-pause" disabled title="Pause / resume the detection"><i data-icon="pause"></i><span>Pause</span></button>
+            <button class="btn grow" data-cmd="detectStop" id="det-stop" disabled title="Stop and keep the frames found so far"><i data-icon="square"></i>Stop</button>
+            <button class="btn grow" data-cmd="detectContinue" id="det-continue" hidden title="Continue the stopped detection from the next strip"><i data-icon="play"></i><span>Continue</span></button>
+            <button class="btn" data-cmd="detectCancel" id="det-cancel" disabled title="Cancel and throw away this detection run"><i data-icon="x"></i>Cancel</button>
           </div>
           <div class="progress"><div class="progress-bar" id="det-bar"></div></div>
           <div class="status-line" id="det-status">Ready</div>
