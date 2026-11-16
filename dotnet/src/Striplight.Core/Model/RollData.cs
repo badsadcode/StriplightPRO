@@ -62,6 +62,8 @@ public sealed class RollData
     /// <summary>0 = Quantum folders, 1 = archive list.</summary>
     public int ExportNamingMode { get; set; }
     public string ArchiveList { get; set; } = "";
+    /// <summary>Microfilm numbers for the handover report (default: the project folder name).</summary>
+    public string ReportMicrofilm { get; set; } = "";
     public bool ExportGrayscale { get; set; } = true;
     public bool ExportProgressive { get; set; }
     public int ExportEncoder { get; set; } = Model.ExportEncoder.TurboJpeg;

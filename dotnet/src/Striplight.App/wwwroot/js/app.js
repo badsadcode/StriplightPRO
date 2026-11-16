@@ -153,6 +153,8 @@ function applySession(s) {
   loadProcess(s.process);
   refreshToneTarget();
   detectResume = null;
+  reportMfTyped = false;
+  $('#report-modal').hidden = true;
   loadExport(s.export, s.defaultOutputRoot);
   refreshOverlays();
   setNotes(s.notes);
@@ -1311,6 +1313,16 @@ const commands = {
   },
   exportStop: () => call('export.cancel'),
   shortcuts: () => { renderKeysEditor(); $('#shortcuts-modal').hidden = false; },
+  report: () => { $('#report-modal').hidden = false; refreshReport(); },
+  reportClose: () => { $('#report-modal').hidden = true; },
+  reportRefresh: () => refreshReport(),
+  reportMfReset: () => { $('#rep-mf').value = ''; reportMfTyped = false; refreshReport(true); },
+  reportCopy: async () => {
+    const r = await run('report.copy', reportArgs());
+    if (r?.error) { toast(r.error, 'error'); return; }
+    toast(tn(r.rows, 'Copied {n} row — paste it into Excel', 'Copied {n} rows — paste them into Excel') +
+      (r.normalized ? ' · ' + t('some values were adjusted for Excel') : ''), 'ok');
+  },
   // F1 opens the manual at the topic of the panel in front (or the start when no roll is open).
   help: () => {
     const tab = $('.rail [aria-selected=true]')?.dataset.tab;
@@ -1337,6 +1349,7 @@ const commands = {
 
 document.addEventListener('click', (e) => {
   if (e.target.id === 'shortcuts-modal') { commands.shortcutsClose(); return; }
+  if (e.target.id === 'report-modal') { commands.reportClose(); return; }
   const el = e.target.closest('[data-cmd]');
   if (!el || el.disabled) return;
   const fn = commands[el.dataset.cmd];
@@ -1410,7 +1423,12 @@ document.addEventListener('keydown', (e) => {
     renderKeysEditor();
     return;
   }
-  // 2. the shortcuts sheet is open
+  // 2. the report sheet is open: Escape closes it
+  if (!$('#report-modal').hidden) {
+    if (e.key === 'Escape') { e.preventDefault(); commands.reportClose(); }
+    return;
+  }
+  // 2b. the shortcuts sheet is open
   if (!$('#shortcuts-modal').hidden) {
     if (e.key === 'Escape') { e.preventDefault(); commands.shortcutsClose(); }
     return;
@@ -1435,6 +1453,57 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ------------------------------------------------------------------ host events
+
+// ------------------------------------------------------------------ handover report
+
+let reportMfTyped = false;   // the microfilm field was edited by hand
+function reportArgs() {
+  return { microfilm: reportMfTyped ? $('#rep-mf').value.trim() : '', headers: $('#rep-headers').checked };
+}
+
+async function refreshReport(resetMf = false) {
+  if (!hasRoll()) return;
+  const r = await run('report.build', resetMf ? { microfilm: '' } : reportArgs()).catch(() => null);
+  if (!r) return;
+  if (!reportMfTyped) $('#rep-mf').value = r.microfilm || '';
+  const head = $('#rep-table thead'), body = $('#rep-table tbody');
+  body.replaceChildren();
+  $('#rep-table tfoot')?.remove();
+  if (r.error) {
+    head.replaceChildren();
+    const tr = document.createElement('tr'), td = document.createElement('td');
+    td.className = 'rep-error'; td.textContent = r.error; tr.append(td); body.append(tr);
+    $('#rep-totals').textContent = ''; $('#rep-warn').textContent = '';
+    return;
+  }
+  const hr = document.createElement('tr');
+  for (const h of r.headers) { const th = document.createElement('th'); th.textContent = h; hr.append(th); }
+  head.replaceChildren(hr);
+  for (const row of r.rows) {
+    const tr = document.createElement('tr');
+    if (row.missingFiles) { tr.className = 'missing'; tr.title = tn(row.missingFiles, '{n} file not found on disk', '{n} files not found on disk'); }
+    const cells = [
+      [row.identifier, 'id'], [row.signatures, ''], [row.microfilm, ''], [row.units.toLocaleString(), 'num'],
+      [row.files.toLocaleString(), 'num'], [row.gb, 'num'], [row.directory, 'dir'],
+    ];
+    for (const [v, cls] of cells) { const td = document.createElement('td'); td.textContent = v; if (cls) td.className = cls; tr.append(td); }
+    body.append(tr);
+  }
+  const foot = document.createElement('tfoot'), ft = document.createElement('tr');
+  for (const [v, cls] of [[t('Total'), 'id'], ['', ''], ['', ''], [r.units.toLocaleString(), 'num'], [r.files.toLocaleString(), 'num'], [r.gb, 'num'], ['', '']]) {
+    const td = document.createElement('td'); td.textContent = v; if (cls) td.className = cls; ft.append(td);
+  }
+  foot.append(ft);
+  $('#rep-table').append(foot);
+  $('#rep-totals').textContent = `${tn(r.rows.length, '{n} row', '{n} rows')} · ${tn(r.files, '{n} file', '{n} files')} · ${r.gb} GB`;
+  const warn = [];
+  if (r.missingFiles) warn.push(tn(r.missingFiles, '{n} exported file is missing on disk (not exported yet?)', '{n} exported files are missing on disk (not exported yet?)'));
+  if (r.framesWithoutRow) warn.push(tn(r.framesWithoutRow, '{n} frame has no archive-list row', '{n} frames have no archive-list row'));
+  $('#rep-warn').textContent = warn.join(' · ');
+}
+$('#rep-mf').addEventListener('input', () => { reportMfTyped = true; });
+$('#rep-mf').addEventListener('change', () => refreshReport());
+$('#rep-mf').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); refreshReport(); } });
 
 async function setLanguage(lang) {
   $('#lang-menu').hidden = true;

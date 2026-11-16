@@ -216,6 +216,21 @@
   <p>W trakcie eksportu: <b>Pauza</b> / <b>Wznów</b> i <b>Stop</b>. Wyeksportowane klatki robią się niebieskie. Nieudane klatki są wypisane pod paskiem postępu; kliknij jedną, aby ją pokazać. <b>Ponów nieudane</b> eksportuje potem tylko te klatki — np. gdy udział sieciowy znów działa.</p>
 </section>
 
+<section id="report">
+  <h2>Raport przekazania</h2>
+  <p>Po eksporcie rolki z nazewnictwem według <b>listy archiwalnej</b> przycisk <b>Raport</b> (panel Eksport) tworzy raport serii do arkusza Excel — jeden wiersz na każdy folder serii zapisany przez tę rolkę:</p>
+  <table>
+    <tr><th>Kolumna</th><th>Zawartość</th></tr>
+    <tr><td>Identyfikator</td><td>Seria: archiwum\zespół\ciągłość\seria, np. <code>1\63\0\1</code>.</td></tr>
+    <tr><td>Sygnatury</td><td>Foldery sygnatur tej rolki w danej serii, w naturalnej kolejności; kolejne liczby stają się zakresami (<code>1-9</code>, <code>26-27</code>), nazwy z literami zostają bez zmian.</td></tr>
+    <tr><td>Numer Mikrofilmu</td><td>Numery mikrofilmów rolki, pobrane z nazwy folderu projektu: <code>123-321_400_405-500</code> daje <code>123-321; 400; 405-500</code>. W razie potrzeby popraw pole — Twój tekst zapisuje się w projekcie; przycisk ↺ przywraca nazwę folderu.</td></tr>
+    <tr><td>Liczba j.a. / Liczba plików / GB</td><td>Liczba sygnatur, liczba wyeksportowanych plików i ich rozmiar (dokładne bajty ÷ 1 000 000 000, zaokrąglone raz do dwóch miejsc).</td></tr>
+    <tr><td>Katalog</td><td>Folder serii na dysku.</td></tr>
+  </table>
+  <p>Liczone są tylko pliki tej rolki, a każdy plik jest sprawdzany na dysku przy otwarciu raportu (<b>Odśwież</b> liczy ponownie). Wiersze z brakującymi plikami są zaznaczone na czerwono, a klatki bez wiersza listy archiwalnej są zgłaszane pod tabelą. Ten sam identyfikator może występować w raportach kilku rolek — to normalne.</p>
+  <p><b>Kopiuj do Excela</b> kopiuje wiersze bez nagłówków (włącz <b>Kopiuj z nagłówkami</b>, jeśli są potrzebne), gotowe do wklejenia do wspólnego arkusza. Kolumny tekstowe wklejają się jako tekst, więc <code>007</code>, <code>5-6</code> czy <code>1; 2</code> nie zamienią się w liczby ani daty.</p>
+</section>
+
 <section id="notes">
   <h2>Notatki</h2>
   <p>Panel Notatki to edytor Markdown dla rolki: uszkodzenia, brakujące klatki, opisy pudeł, pytania do archiwum. Notatki są zapisywane w projekcie <code>.slf</code>.</p>

@@ -92,7 +92,8 @@ public static class ProjectFile
           .Append($" ExportNamingMode=\"{I(r.ExportNamingMode)}\"")
           .Append($" ExportGrayscale=\"{B(r.ExportGrayscale)}\" ExportProgressive=\"{B(r.ExportProgressive)}\"")
           .Append($" ExportEncoder=\"{I(r.ExportEncoder)}\"")
-          .Append($" ArchiveList=\"{X(EncodeSlfText(r.ArchiveList))}\" />").Append(NL);
+          .Append($" ArchiveList=\"{X(EncodeSlfText(r.ArchiveList))}\"")
+          .Append($" ReportMicrofilm=\"{X(r.ReportMicrofilm)}\" />").Append(NL);
 
         if (!string.IsNullOrEmpty(p.Notes))
         {
@@ -248,6 +249,7 @@ public static class ProjectFile
             roll.SharpnessMode = XmlAttr.Int(s, "SharpnessMode", roll.SharpnessMode);
             roll.ExportNamingMode = XmlAttr.Int(s, "ExportNamingMode", roll.ExportNamingMode);
             roll.ArchiveList = DecodeSlfText(XmlAttr.Str(s, "ArchiveList", roll.ArchiveList));
+            roll.ReportMicrofilm = XmlAttr.Str(s, "ReportMicrofilm", roll.ReportMicrofilm);
             roll.ExportGrayscale = XmlAttr.Bool(s, "ExportGrayscale", roll.ExportGrayscale);
             roll.ExportProgressive = XmlAttr.Bool(s, "ExportProgressive", roll.ExportProgressive);
             roll.ExportEncoder = XmlAttr.Int(s, "ExportEncoder", roll.ExportEncoder);

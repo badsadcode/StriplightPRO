@@ -422,6 +422,7 @@
             <button class="btn" data-cmd="exportPause" id="exp-pause" disabled><i data-icon="pause"></i><span>Pause</span></button>
             <button class="btn" data-cmd="exportStop" id="exp-stop" disabled><i data-icon="square"></i>Stop</button>
           </div>
+          <button class="btn" data-cmd="report" data-needs-roll title="Handover report of this roll for Excel"><i data-icon="notebook-pen"></i>Report</button>
           <button class="btn" data-cmd="prepareFolders" data-needs-roll title="Create all output folders now, without exporting"><i data-icon="folder"></i>Prepare folders</button>
           <div class="progress"><div class="progress-bar" id="exp-bar"></div></div>
           <div class="status-line" id="exp-status">Ready</div>
@@ -447,6 +448,25 @@
   </footer>
 
   <!-- ============================================================ shortcuts -->
+  <div class="sheet-backdrop" id="report-modal" hidden>
+    <div class="sheet report-sheet" role="dialog" aria-modal="true" aria-labelledby="report-title">
+      <header><h2 id="report-title">Handover report</h2><button class="icon-btn" data-cmd="reportClose" aria-label="Close"><i data-icon="x"></i></button></header>
+      <div class="report-tools">
+        <label class="field rep-mf">Microfilm number
+          <span class="input-with-btn">
+            <input type="text" id="rep-mf" spellcheck="false" title="Taken from the project folder name; _ and spaces become ; — edit it if needed (saved in the project)">
+            <button class="icon-btn boxed" data-cmd="reportMfReset" title="Back to the project folder name" aria-label="Back to the project folder name"><i data-icon="rotate-ccw"></i></button>
+          </span>
+        </label>
+        <label class="switch"><input type="checkbox" id="rep-headers"><span></span>Copy with headers</label>
+        <button class="btn" data-cmd="reportRefresh" title="Count the exported files on disk again"><i data-icon="rotate-cw"></i>Refresh</button>
+        <button class="btn btn-primary" data-cmd="reportCopy"><i data-icon="check-check"></i>Copy to Excel</button>
+      </div>
+      <div class="report-wrap"><table class="report-table" id="rep-table"><thead></thead><tbody></tbody></table></div>
+      <footer class="report-foot"><span id="rep-totals"></span><span id="rep-warn" class="rep-warn"></span></footer>
+    </div>
+  </div>
+
   <div class="sheet-backdrop" id="shortcuts-modal" hidden>
     <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
       <header><h2 id="shortcuts-title">Keyboard shortcuts</h2><button class="icon-btn" data-cmd="shortcutsClose" aria-label="Close"><i data-icon="x"></i></button></header>

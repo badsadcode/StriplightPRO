@@ -58,6 +58,7 @@ export const COMMANDS = [
   { id: 'clearSuggested', group: 'main', section: 'Detect & export', label: 'Clear suggested', keys: [] },
   { id: 'exportStart', group: 'main', section: 'Detect & export', label: 'Start export', keys: [] },
   { id: 'exportRetry', group: 'main', section: 'Detect & export', label: 'Re-export failed frames', keys: [] },
+  { id: 'report', group: 'main', section: 'Detect & export', label: 'Handover report', keys: [] },
 
   // ---- preview window
   { id: 'pv.prev', group: 'preview', section: 'Preview window', label: 'Previous frame', keys: ['X', 'ArrowLeft', 'PageUp'] },

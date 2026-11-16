@@ -505,6 +505,20 @@ public sealed class AppController
             var r = ArchiveFolders.Build(dlg.FolderName);
             return new { root = dlg.FolderName, rows = r.Rows, skipped = r.SkippedNames };
         });
+        // ---- handover report (per processed roll, like the StripLedger series report)
+        _bridge.On("report.build", args => BuildReport(args, out _));
+        _bridge.On("report.copy", args =>
+        {
+            var result = BuildReport(args, out var built);
+            if (built is null) return result;   // e.g. not archive-list naming: the page shows the error
+            bool headers = BridgeHost.Arg(args, "headers", false);
+            var payload = ProjectReportBuilder.ToClipboard(built!, headers ? ReportHeaders() : null);
+            var data = new DataObject();
+            data.SetData(DataFormats.UnicodeText, payload.Tsv);
+            data.SetData(DataFormats.Html, new MemoryStream(payload.CfHtml));
+            Clipboard.SetDataObject(data, true);
+            return new { rows = built!.Rows.Count, normalized = payload.Normalized };
+        });
         _bridge.On("shell.openFolder", args => { Shell.OpenFolder(BridgeHost.Arg(args, "path", "")); return null; });
         _bridge.On("shell.openUrl", args => { Shell.OpenUrl(BridgeHost.Arg(args, "url", "")); return null; });
     }
@@ -593,6 +607,46 @@ public sealed class AppController
             rotation = p.Rotation, mirror = p.FlipH, negative = p.Negative, ownOrientation = f.HasOverride,
             imageVersion = _imageVersion,
             settings = new { topmost = _settings.PreviewTopmost, step = _settings.PreviewStep, fullQuality = _settings.PreviewFullQuality, theme = _settings.Theme, keyBindings = _settings.KeyBindings },
+        };
+    }
+
+    private static string[] ReportHeaders() =>
+    [
+        Loc.T("Identifier"), Loc.T("Signatures"), Loc.T("Microfilm number"), Loc.T("Units"),
+        Loc.T("Files"), "GB", Loc.T("Directory"),
+    ];
+
+    /// <summary>The microfilm numbers: saved value, else the name of the project's folder.</summary>
+    private string DefaultMicrofilm()
+    {
+        string folder = _idfPath != "" ? Path.GetDirectoryName(_idfPath) ?? "" : _project.Roll.BasePath;
+        return ProjectReportBuilder.FormatMicrofilm(Path.GetFileName(folder.TrimEnd('\\', '/')));
+    }
+
+    private object? BuildReport(JsonElement args, out ProjectReport? report)
+    {
+        report = null;
+        if (!_project.Roll.Loaded) throw new BridgeException(Loc.T("Open a roll first."));
+        // Typed by the user: remembered in the project. Empty: the saved value, else the folder name.
+        string typed = BridgeHost.Arg(args, "microfilm", "").Trim();
+        if (typed != "" && typed != _project.Roll.ReportMicrofilm && typed != DefaultMicrofilm())
+        {
+            _project.Roll.ReportMicrofilm = typed;
+            MarkDirty();
+        }
+        string microfilm = typed != "" ? typed : _project.Roll.ReportMicrofilm != "" ? _project.Roll.ReportMicrofilm : DefaultMicrofilm();
+        var naming = _export.ToNaming(ExportNaming.DefaultOutputRoot(ProjectRootPath, _project.Roll));
+        if (naming.Mode != 1) return new { error = Loc.T("The report needs the archive-list naming (Export → Naming)."), microfilm };
+        report = ProjectReportBuilder.Build(_project.Frames, naming, microfilm, p =>
+        {
+            try { var fi = new FileInfo(p); return fi.Exists ? fi.Length : null; }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException) { return null; }
+        });
+        return report is null ? null : (object)new
+        {
+            microfilm, defaultMicrofilm = DefaultMicrofilm(), headers = ReportHeaders(),
+            rows = report.Rows.Select(r => new { r.Identifier, signatures = r.SignatureList, r.Microfilm, r.Units, r.Files, r.Gb, r.Directory, r.MissingFiles }),
+            report.Units, report.Files, report.Gb, report.ExpectedFiles, report.MissingFiles, report.FramesWithoutRow,
         };
     }
 
