@@ -91,6 +91,15 @@ public sealed class DetectDto
     public int LeftInset { get; set; }
     public int RightInset { get; set; }
     public bool UseToneSliders { get; set; } = true;
+    // Advanced (QuantumScan-style) controls; null = default
+    public int MinRun { get; set; }
+    public int TouchWidth { get; set; }
+    public int TouchLength { get; set; } = -1;   // -1 = roll length / 64 (previous fixed value)
+    public int MaxLength { get; set; }
+    public int OverscanWidth { get; set; }
+    public int OverscanLength { get; set; }
+    public bool Invert { get; set; }
+    public bool AutoThreshold { get; set; }
 }
 
 public sealed class FramePatch

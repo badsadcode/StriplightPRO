@@ -718,6 +718,23 @@ $$('#sharp-mode, #proc-rotation, #proc-mirror, #proc-negative, #tone-on-strips')
 
 // ------------------------------------------------------------------ detect panel
 
+// ---- detection options (remembered on this PC)
+const num0 = (id) => Math.max(0, Number($(id).value) || 0);
+const DET_KEYS = ['#det-auto', '#det-invert', '#det-adv', '#det-minrun', '#det-maxlen', '#det-touchw', '#det-touchl', '#det-osw', '#det-osl'];
+function saveDetectOptions() {
+  const o = Object.fromEntries(DET_KEYS.map((id) => [id, $(id).type === 'checkbox' ? $(id).checked : $(id).value]));
+  try { localStorage.setItem('striplight.detect', JSON.stringify(o)); } catch { /* storage unavailable */ }
+  $('#det-adv-box').hidden = !$('#det-adv').checked;
+}
+function loadDetectOptions() {
+  let o = null;
+  try { o = JSON.parse(localStorage.getItem('striplight.detect') || 'null'); } catch { o = null; }
+  if (o) for (const id of DET_KEYS) if (id in o) { if ($(id).type === 'checkbox') $(id).checked = !!o[id]; else $(id).value = o[id]; }
+  $('#det-adv-box').hidden = !$('#det-adv').checked;
+}
+DET_KEYS.forEach((id) => $(id).addEventListener('change', saveDetectOptions));
+loadDetectOptions();
+
 async function detect() {
   if (!hasRoll() || state.detecting) return;
   const stripCount = state.session.roll.stripCount;
@@ -733,6 +750,13 @@ async function detect() {
     leftInset: $('#det-area').checked ? Number($(view.rotateCw ? '#det-left' : '#det-right').value) || 0 : 0,
     rightInset: $('#det-area').checked ? Number($(view.rotateCw ? '#det-right' : '#det-left').value) || 0 : 0,
     useToneSliders: $('#det-tone').checked,
+    autoThreshold: $('#det-auto').checked,
+    invert: $('#det-invert').checked,
+    ...($('#det-adv').checked ? {
+      minRun: num0('#det-minrun'), maxLength: num0('#det-maxlen'),
+      touchWidth: num0('#det-touchw'), touchLength: num0('#det-touchl'),
+      overscanWidth: Number($('#det-osw').value) || 0, overscanLength: Number($('#det-osl').value) || 0,
+    } : {}),
   };
   state.detecting = true;
   refreshEnabled();
@@ -1108,6 +1132,13 @@ const commands = {
   },
   detect,
   detectCancel: () => call('detect.cancel'),
+  detectDefaults: () => {
+    for (const [id, v] of [['#det-minrun', 0], ['#det-maxlen', 0], ['#det-touchw', 0], ['#det-osw', 0], ['#det-osl', 0]]) $(id).value = v;
+    $('#det-touchl').value = hasRoll() ? Math.floor(state.session.roll.lengthLines / 64) : 64;
+    $('#det-auto').checked = $('#det-invert').checked = false;
+    saveDetectOptions();
+    toast('Detection settings back to defaults');
+  },
   toneReset: () => {
     const m = Number($('#tone-method').value);
     applyRanges(m, true);

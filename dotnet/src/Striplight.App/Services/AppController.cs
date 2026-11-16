@@ -747,8 +747,12 @@ public sealed class AppController
                 ? ToneAdjust.BuildLut(ToneAdjust.IsAdaptive(tone.Method) ? ToneMethod.Striplight : tone.Method,
                     tone.Flags, tone.Contrast, tone.Brightness, tone.Gamma)
                 : null,
-            MergeAcrossGaps = roll.LengthLines / 64,
+            MergeAcrossGaps = d.TouchLength >= 0 ? d.TouchLength : roll.LengthLines / 64,
             LeftInsetPx = d.LeftInset, RightInsetPx = d.RightInset,
+            MinRunPx = Math.Max(0, d.MinRun), TouchWidthPx = Math.Max(0, d.TouchWidth),
+            MaxLengthPx = Math.Max(0, d.MaxLength),
+            OverscanWidthPx = d.OverscanWidth, OverscanLengthPx = d.OverscanLength,
+            Invert = d.Invert, AutoThreshold = d.AutoThreshold,
         };
         roll.DetectionThreshold = d.Threshold;
         roll.DetectMinWidth = d.MinWidth;

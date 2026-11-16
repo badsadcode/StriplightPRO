@@ -21,6 +21,22 @@ public sealed record DetectOptions
     /// Brightness/Contrast/Gamma formula, so detection sees exactly what the strip view shows.
     /// </summary>
     public byte[]? ToneLut { get; init; }
+
+    // ---- Advanced controls (QuantumScan-style). Defaults keep the original behaviour.
+    /// <summary>A bright pixel only counts inside a run of at least this many bright pixels across the film (full-res px). Removes specks and grey background noise.</summary>
+    public int MinRunPx { get; init; }
+    /// <summary>Dark gaps up to this size inside a line still join two bright runs (full-res px across the film).</summary>
+    public int TouchWidthPx { get; init; }
+    /// <summary>Frames longer than this are split into equal parts (full-res lines, 0 = off).</summary>
+    public int MaxLengthPx { get; init; }
+    /// <summary>Grow every detected frame by this much across the film, each side (full-res px).</summary>
+    public int OverscanWidthPx { get; init; }
+    /// <summary>Grow every detected frame by this much along the film, each end (full-res lines).</summary>
+    public int OverscanLengthPx { get; init; }
+    /// <summary>Dark frames on light film: what is dark after the tone curve counts as frame.</summary>
+    public bool Invert { get; init; }
+    /// <summary>Pick the threshold per strip from its histogram (Otsu); falls back to <see cref="Threshold"/> on strips without clear frames.</summary>
+    public bool AutoThreshold { get; init; }
 }
 
 /// <summary>
@@ -76,7 +92,66 @@ public static class FrameDetector
                 progress.Report(new DetectProgress(cur, total, read, missing, frames.Count, strip, fromIdx, slice));
             }
         }
-        return frames;
+        return PostProcess(roll, options, frames);
+    }
+
+    /// <summary>Maximum frame length (equal split) and overscan, applied once detection is done.</summary>
+    internal static List<FrameRecord> PostProcess(RollData roll, DetectOptions o, List<FrameRecord> frames)
+    {
+        if (o.MaxLengthPx <= 0 && o.OverscanWidthPx == 0 && o.OverscanLengthPx == 0) return frames;
+        long rollEnd = (long)roll.StripCount * roll.LengthLines;
+        var result = new List<FrameRecord>(frames.Count);
+        foreach (var f in frames)
+        {
+            long len = f.TrailEdge - f.LeadEdge;
+            int parts = o.MaxLengthPx > 0 && len > o.MaxLengthPx ? (int)Math.Ceiling(len / (double)o.MaxLengthPx) : 1;
+            for (int k = 0; k < parts; k++)
+            {
+                var p = f.Clone();
+                p.LeadEdge = f.LeadEdge + len * k / parts;
+                p.TrailEdge = f.LeadEdge + len * (k + 1) / parts;
+                result.Add(p);
+            }
+        }
+        foreach (var f in result)
+        {
+            f.LeadEdge = Math.Max(0, f.LeadEdge - o.OverscanLengthPx);
+            f.TrailEdge = Math.Min(rollEnd, f.TrailEdge + o.OverscanLengthPx);
+            f.LeftEdge = Math.Clamp(f.LeftEdge - o.OverscanWidthPx, 0, roll.WidthPixels);
+            f.RightEdge = Math.Clamp(f.RightEdge + o.OverscanWidthPx, 0, roll.WidthPixels);
+        }
+        result.RemoveAll(f => f.TrailEdge <= f.LeadEdge || f.RightEdge <= f.LeftEdge);
+        for (int i = 0; i < result.Count; i++) result[i].Index = i;
+        return result;
+    }
+
+    /// <summary>
+    /// Otsu's threshold of a 256-bin histogram, or -1 when the two classes are not clearly
+    /// apart (a strip of empty film, or one big frame): then the manual threshold is used.
+    /// </summary>
+    internal static int OtsuThreshold(long[] hist)
+    {
+        long total = 0, sumAll = 0;
+        for (int i = 0; i < 256; i++) { total += hist[i]; sumAll += i * hist[i]; }
+        if (total == 0) return -1;
+        long wB = 0, sumB = 0;
+        double best = -1;
+        int bestT = -1;
+        double bestMeanB = 0, bestMeanF = 0;
+        for (int t = 0; t < 255; t++)
+        {
+            wB += hist[t];
+            if (wB == 0) continue;
+            long wF = total - wB;
+            if (wF == 0) break;
+            sumB += t * hist[t];
+            double mB = sumB / (double)wB, mF = (sumAll - sumB) / (double)wF;
+            double between = (double)wB * wF * (mB - mF) * (mB - mF);
+            if (between > best) { best = between; bestT = t + 1; bestMeanB = mB; bestMeanF = mF; }
+        }
+        // Classes closer than 40 grey levels: no real frame/background split on this strip.
+        double minorShare = Math.Min(hist.Take(bestT).Sum(), total - hist.Take(bestT).Sum()) / (double)total;
+        return bestT > 0 && bestMeanF - bestMeanB >= 40 && minorShare >= 0.02 ? bestT : -1;
     }
 
     internal static int[] BuildLumLut(DetectOptions o)
@@ -104,11 +179,31 @@ public static class FrameDetector
         int minWPrev = Math.Max(1, o.MinWidthPx / ds);
         int minHPrev = Math.Max(1, o.MinHeightPx / ds);
         int threshold = Math.Clamp(o.Threshold, 1, 254);
+        int minRun = Math.Max(1, (int)Math.Round(o.MinRunPx / (double)ds));
+        int touchW = Math.Max(0, (int)Math.Round(o.TouchWidthPx / (double)ds));
+        // Dark lines allowed inside a frame within one strip (the same gap joins frames across strips).
+        int touchL = Math.Max(0, o.MergeAcrossGaps / ds);
 
         int w = img.Width, h = img.Height;
         int scanMinX = Math.Clamp(o.LeftInsetPx / ds, 0, Math.Max(0, w - 1));
         int scanMaxX = Math.Clamp(w - 1 - o.RightInsetPx / ds, 0, Math.Max(0, w - 1));
         if (scanMaxX < scanMinX) return;
+
+        var px = img.Pixels;
+        int ch = img.Channels, stride = img.Stride;
+        // BGRA: lum = (R*30 + G*59 + B*11) / 100, as the Pascal PixelLum.
+        int Lum(int p) => lumLut[ch == 1 ? px[p] : (px[p + 2] * 30 + px[p + 1] * 59 + px[p] * 11) / 100];
+
+        if (o.AutoThreshold)
+        {
+            var hist = new long[256];
+            for (int y = 0; y < h; y += 2)
+                for (int x = scanMinX, p = y * stride + scanMinX * ch; x <= scanMaxX; x += 2, p += 2 * ch)
+                    hist[Lum(p)]++;
+            int t = OtsuThreshold(hist);
+            if (t > 0) threshold = Math.Clamp(t, 1, 254);
+        }
+        bool invert = o.Invert;
 
         bool inRun = false;
         int runStartY = 0, runEndY = 0, runMinX = 0, runMaxX = 0;
@@ -130,30 +225,40 @@ public static class FrameDetector
             if (f.TrailEdge > f.LeadEdge && f.RightEdge > f.LeftEdge) AppendOrMerge(frames, f, o.MergeAcrossGaps);
         }
 
-        var px = img.Pixels;
-        int ch = img.Channels, stride = img.Stride;
         for (int y = 0; y < h; y++)
         {
             int bright = 0, rowMin = w, rowMax = -1;
+            // Bright runs across the film; gaps up to touchW join runs; runs shorter than
+            // minRun are noise. With the defaults (minRun 1, touchW 0) every bright pixel counts.
+            int segStart = -1, segEnd = -1, segBright = 0;
+            void CloseSegment()
+            {
+                if (segStart < 0) return;
+                if (segEnd - segStart + 1 >= minRun)
+                {
+                    bright += segBright;
+                    if (segStart < rowMin) rowMin = segStart;
+                    if (segEnd > rowMax) rowMax = segEnd;
+                }
+                segStart = -1; segBright = 0;
+            }
             int p = y * stride + scanMinX * ch;
             for (int x = scanMinX; x <= scanMaxX; x++, p += ch)
             {
-                // BGRA: lum = (R*30 + G*59 + B*11) / 100, as the Pascal PixelLum.
-                int lum = ch == 1 ? px[p] : (px[p + 2] * 30 + px[p + 1] * 59 + px[p] * 11) / 100;
-                if (lumLut[lum] >= threshold)
-                {
-                    bright++;
-                    if (x < rowMin) rowMin = x;
-                    if (x > rowMax) rowMax = x;
-                }
+                if ((Lum(p) >= threshold) == invert) continue;
+                if (segStart >= 0 && x - segEnd - 1 > touchW) CloseSegment();
+                if (segStart < 0) segStart = x;
+                segEnd = x;
+                segBright++;
             }
+            CloseSegment();
             if (bright >= minWPrev && rowMax - rowMin + 1 >= minWPrev)
             {
                 if (!inRun) { inRun = true; runStartY = y; runMinX = rowMin; runMaxX = rowMax; }
                 else { runMinX = Math.Min(runMinX, rowMin); runMaxX = Math.Max(runMaxX, rowMax); }
                 runEndY = y;
             }
-            else FinishRun();
+            else if (inRun && y - runEndY > touchL) FinishRun();
         }
         FinishRun();
     }
