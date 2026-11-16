@@ -27,6 +27,7 @@ export const COMMANDS = [
   { id: 'previewFrame', group: 'main', section: 'View', label: 'Open preview window', keys: ['Enter'] },
   { id: 'shortcuts', group: 'main', section: 'View', label: 'Keyboard shortcuts', keys: ['?'] },
   { id: 'help', group: 'main', section: 'View', label: 'Help / manual', keys: ['F1'] },
+  { id: 'cache', group: 'main', section: 'View', label: 'Preview cache', keys: [] },
   // ---- main window: selection & editing
   { id: 'selectAll', group: 'main', section: 'Select', label: 'Select all', keys: ['Ctrl+A'] },
   { id: 'selectNone', group: 'main', section: 'Select', label: 'Select none', keys: ['Ctrl+D'] },

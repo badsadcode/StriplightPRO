@@ -69,6 +69,9 @@ public sealed class ExportEngine
 
         void Worker()
         {
+            // Below normal: the strip view, preview and the rest of the PC stay responsive while
+            // exporting; the export still takes every idle cycle.
+            Thread.CurrentThread.Priority = ThreadPriority.BelowNormal;
             while (true)
             {
                 _running.Wait(cancel);

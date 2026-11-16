@@ -42,7 +42,11 @@ public static class RollPaths
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
-                File.Copy(source, cachePath, overwrite: true);
+                // Copy under a unique name, then rename: a half-copied preview is never read,
+                // even when the view and detection ask for the same strip at once.
+                string tmp = cachePath + "." + Guid.NewGuid().ToString("N")[..8] + ".part";
+                File.Copy(source, tmp, overwrite: true);
+                File.Move(tmp, cachePath, overwrite: true);
                 if (File.Exists(cachePath)) return cachePath;
             }
             catch (IOException) { /* fall back to the original preview */ }

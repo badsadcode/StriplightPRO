@@ -28,6 +28,7 @@
       <button class="btn btn-primary" data-cmd="save" data-needs-roll title="Save project (Ctrl+S)"><i data-icon="save"></i><span>Save</span></button>
       <button class="icon-btn theme-toggle" data-cmd="theme" title="Switch light / dark theme" aria-label="Switch theme"><span class="icon-moon"><i data-icon="moon" data-size="18"></i></span><span class="icon-sun"><i data-icon="sun" data-size="18"></i></span></button>
       <button class="icon-btn" data-cmd="shortcuts" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><i data-icon="keyboard" data-size="18"></i></button>
+      <button class="icon-btn" data-cmd="cache" title="Preview cache" aria-label="Preview cache"><i data-icon="hard-drive-download" data-size="18"></i></button>
       <button class="icon-btn" data-cmd="help" title="Help (F1)" aria-label="Help"><i data-icon="circle-help" data-size="18"></i></button>
       <button class="btn btn-ghost lang-btn" data-cmd="langMenu" title="Language" aria-label="Language"><span id="lang-code">EN</span></button>
     </div>
@@ -450,6 +451,49 @@
   </footer>
 
   <!-- ============================================================ shortcuts -->
+  <div class="sheet-backdrop" id="cache-modal" hidden>
+    <div class="sheet cache-sheet" role="dialog" aria-modal="true" aria-labelledby="cache-title">
+      <header><h2 id="cache-title">Preview cache</h2><button class="icon-btn" data-cmd="cacheClose" aria-label="Close"><i data-icon="x"></i></button></header>
+      <div class="cache-body">
+        <p class="hint">Copies the small preview images of a roll from the network share to this computer and reads them from there, so pages load fast even while exporting. Full strips are not copied.</p>
+        <section class="cache-sec">
+          <h3>This computer</h3>
+          <label class="switch"><input type="checkbox" id="cache-on"><span></span>Cache previews locally (copied on first use)</label>
+          <label class="field">Cache folder
+            <span class="input-with-btn">
+              <input type="text" id="cache-folder" readonly>
+              <button class="icon-btn boxed" data-cmd="cachePickFolder" title="Choose another folder" aria-label="Choose another folder"><i data-icon="folder"></i></button>
+              <button class="icon-btn boxed" data-cmd="cacheResetFolder" title="Back to the default folder" aria-label="Back to the default folder"><i data-icon="rotate-ccw"></i></button>
+              <button class="icon-btn boxed" data-cmd="cacheOpenFolder" title="Open in Explorer" aria-label="Open in Explorer"><i data-icon="external-link"></i></button>
+            </span>
+          </label>
+          <div class="btn-row"><span class="muted grow" id="cache-all"></span><button class="btn btn-danger" data-cmd="cacheClearAll"><i data-icon="trash-2"></i>Clear all caches</button></div>
+        </section>
+        <section class="cache-sec">
+          <h3>This roll</h3>
+          <div class="muted" id="cache-roll"></div>
+          <div class="progress"><div class="progress-bar" id="cache-bar"></div></div>
+          <div class="status-line" id="cache-status"></div>
+          <div class="btn-row">
+            <button class="btn btn-primary grow" data-cmd="cacheStart" id="cache-start"><i data-icon="hard-drive-download"></i>Cache whole roll now</button>
+            <button class="btn" data-cmd="cacheStop" id="cache-stop"><i data-icon="square"></i>Stop</button>
+            <button class="btn" data-cmd="cacheClearRoll"><i data-icon="trash-2"></i>Clear this roll</button>
+          </div>
+        </section>
+        <section class="cache-sec">
+          <h3>Cache manager <small>several projects in the background</small></h3>
+          <ul class="cache-queue" id="cache-queue"></ul>
+          <div class="btn-row wrap">
+            <button class="btn" data-cmd="cacheAddFiles"><i data-icon="list-plus"></i>Add projects…</button>
+            <button class="btn" data-cmd="cacheAddFolder"><i data-icon="folder-plus"></i>Add folder…</button>
+            <button class="btn btn-primary" data-cmd="cacheQueueStart" id="cache-qstart"><i data-icon="play"></i>Start</button>
+            <button class="btn" data-cmd="cacheQueueClear"><i data-icon="x"></i>Clear list</button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
   <div class="sheet-backdrop" id="report-modal" hidden>
     <div class="sheet report-sheet" role="dialog" aria-modal="true" aria-labelledby="report-title">
       <header><h2 id="report-title">Handover report</h2><button class="icon-btn" data-cmd="reportClose" aria-label="Close"><i data-icon="x"></i></button></header>

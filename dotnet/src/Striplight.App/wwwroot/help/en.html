@@ -266,6 +266,18 @@
   <p>To change a translation, choose <b>Edit translations</b> in that menu. Striplight copies <code>pl.json</code> to <code>%APPDATA%\StriplightPRO\lang\</code> and opens the folder. Each line maps the English text to the translation; edit the right-hand side and switch the language again to see it. Your file overrides the built-in one and survives updates. Lines you delete fall back to the built-in translation.</p>
 </section>
 
+<section id="cache">
+  <h2>Preview cache</h2>
+  <p>The <b>preview cache</b> button in the app bar copies the roll's small preview images from the network share to this computer, so pages load quickly even when the share is slow or the PC is busy exporting. Only previews are copied — full strips stay where they are.</p>
+  <ul>
+    <li><b>Cache previews locally</b>: previews are copied the first time they are needed (strip view, detection) and read from the local copy afterwards. The setting belongs to this computer.</li>
+    <li><b>Cache folder</b>: by default <code>%LOCALAPPDATA%\StriplightPRO\PreviewCache</code>; choose another (fast, local) folder if you like. Each roll gets its own subfolder.</li>
+    <li><b>Cache whole roll now</b> copies every preview of the open roll in the background (low priority), with progress and <b>Stop</b>. <b>Clear this roll</b> / <b>Clear all caches</b> free the space again.</li>
+    <li><b>Cache manager</b>: add several projects (<b>Add projects…</b> for .idf / .slf files, <b>Add folder…</b> for every roll under a folder) and press <b>Start</b> — they are cached one after another while you work, e.g. tomorrow's rolls overnight.</li>
+  </ul>
+  <p>While exporting, the export runs at below-normal priority, so the strip view and the preview stay responsive.</p>
+</section>
+
 <section id="files">
   <h2>Files, settings and tips</h2>
   <ul>

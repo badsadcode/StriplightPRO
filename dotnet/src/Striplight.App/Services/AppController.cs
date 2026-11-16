@@ -51,6 +51,12 @@ public sealed class AppController
     private DetectResume? _detectResume;
     /// <summary>Panel fields of the open project (from the page; saved in the .slf).</summary>
     private JsonElement? _panels;
+    // ---- preview cache
+    private CancellationTokenSource? _cacheCts;
+    private string _cacheJob = "";                                   // label of the running job
+    private readonly Dictionary<string, string> _queueStatus = new(StringComparer.OrdinalIgnoreCase);
+    private string CacheRoot => _settings.CacheFolder.Trim() != "" ? _settings.CacheFolder.Trim() : PreviewCache.DefaultRoot;
+    private string RollCacheFolder => PreviewCache.ProjectRoot(CacheRoot, _project.Roll, _idfPath);
     private CancellationTokenSource? _exportCts;
     private ExportEngine? _exportEngine;
 
@@ -526,6 +532,99 @@ public sealed class AppController
             var r = ArchiveFolders.Build(dlg.FolderName);
             return new { root = dlg.FolderName, rows = r.Rows, skipped = r.SkippedNames };
         });
+        // ---- preview cache (Lazarus cache previews / background cache / cache manager)
+        _bridge.On("cache.info", _ => CacheInfo());
+        _bridge.On("cache.set", args =>
+        {
+            _settings.CachePreviews = BridgeHost.Arg(args, "enabled", _settings.CachePreviews);
+            _settings.Save();
+            ApplyCache();
+            _imageVersion++;
+            _bridge.Emit("images.changed", new { imageVersion = _imageVersion });
+            return CacheInfo();
+        });
+        _bridge.On("cache.pickFolder", _ =>
+        {
+            var dlg = new OpenFolderDialog { Title = Loc.T("Choose the preview cache folder") };
+            if (Directory.Exists(CacheRoot)) dlg.InitialDirectory = CacheRoot;
+            if (dlg.ShowDialog(_owner) != true) return CacheInfo();
+            _settings.CacheFolder = dlg.FolderName;
+            _settings.Save();
+            ApplyCache();
+            return CacheInfo();
+        });
+        _bridge.On("cache.resetFolder", _ => { _settings.CacheFolder = ""; _settings.Save(); ApplyCache(); return CacheInfo(); });
+        _bridge.On("cache.openFolder", _ => { Directory.CreateDirectory(CacheRoot); Shell.OpenFolder(CacheRoot); return null; });
+        _bridge.On("cache.start", _ =>
+        {
+            if (!_project.Roll.Loaded) throw new BridgeException(Loc.T("Open a roll first."));
+            var roll = _project.Roll.Clone();
+            string folder = RollCacheFolder, label = _project.Roll.RollName;
+            StartCacheJob(label, token => { PreviewCache.CacheRoll(roll, folder, label, CacheProgress(), token); return true; });
+            return CacheInfo();
+        });
+        _bridge.On("cache.stop", _ => { _cacheCts?.Cancel(); return null; });
+        _bridge.On("cache.clearRoll", _ =>
+        {
+            if (_cacheCts is not null) throw new BridgeException(Loc.T("The cache is busy. Stop it first."));
+            if (_project.Roll.Loaded) PreviewCache.Clear(RollCacheFolder, CacheRoot);
+            return CacheInfo();
+        });
+        _bridge.On("cache.clearAll", _ =>
+        {
+            if (_cacheCts is not null) throw new BridgeException(Loc.T("The cache is busy. Stop it first."));
+            if (Directory.Exists(CacheRoot))
+                foreach (string d in Directory.GetDirectories(CacheRoot)) PreviewCache.Clear(d, CacheRoot);
+            return CacheInfo();
+        });
+        _bridge.On("cache.queueAddFiles", _ =>
+        {
+            var dlg = new OpenFileDialog
+            {
+                Title = Loc.T("Add projects to the cache queue"), Multiselect = true,
+                Filter = Loc.T("Striplight rolls") + " (*.idf;*.slf;*.qpf)|*.idf;*.slf;*.qpf|" + Loc.T("All files") + " (*.*)|*.*",
+            };
+            if (Directory.Exists(_settings.LastFolder)) dlg.InitialDirectory = _settings.LastFolder;
+            if (dlg.ShowDialog(_owner) == true) AddToQueue(dlg.FileNames);
+            return CacheInfo();
+        });
+        _bridge.On("cache.queueAddFolder", _ =>
+        {
+            var dlg = new OpenFolderDialog { Title = Loc.T("Add every roll (.idf) under a folder") };
+            if (Directory.Exists(_settings.LastFolder)) dlg.InitialDirectory = _settings.LastFolder;
+            if (dlg.ShowDialog(_owner) == true) AddToQueue(PreviewCache.FindRolls(dlg.FolderName));
+            return CacheInfo();
+        });
+        _bridge.On("cache.queueRemove", args =>
+        {
+            int i = BridgeHost.Arg(args, "index", -1);
+            if (i >= 0 && i < _settings.CacheQueue.Count) { _settings.CacheQueue.RemoveAt(i); _settings.Save(); }
+            return CacheInfo();
+        });
+        _bridge.On("cache.queueClear", _ => { _settings.CacheQueue.Clear(); _queueStatus.Clear(); _settings.Save(); return CacheInfo(); });
+        _bridge.On("cache.queueStart", _ =>
+        {
+            var items = _settings.CacheQueue.ToList();
+            string root = CacheRoot;
+            StartCacheJob(Loc.T("Cache queue"), token =>
+            {
+                foreach (string path in items)
+                {
+                    if (token.IsCancellationRequested) return false;
+                    string name = Path.GetFileNameWithoutExtension(path);
+                    SetQueueStatus(path, Loc.T("caching…"));
+                    var loaded = PreviewCache.LoadRoll(path);
+                    if (loaded is not { } l) { SetQueueStatus(path, Loc.T("cannot read")); continue; }
+                    var r = PreviewCache.CacheRoll(l.Roll, PreviewCache.ProjectRoot(root, l.Roll, l.IdfPath), name, CacheProgress(), token);
+                    SetQueueStatus(path, r.Cancelled ? Loc.T("stopped")
+                        : Loc.T("done · {copied} copied, {skipped} already cached, {missing} missing",
+                            ("copied", r.Copied), ("skipped", r.Skipped), ("missing", r.Missing)));
+                }
+                return true;
+            });
+            return CacheInfo();
+        });
+
         // ---- handover report (per processed roll, like the StripLedger series report)
         _bridge.On("report.build", args => BuildReport(args, out _));
         _bridge.On("report.copy", args =>
@@ -629,6 +728,73 @@ public sealed class AppController
             imageVersion = _imageVersion,
             settings = new { topmost = _settings.PreviewTopmost, step = _settings.PreviewStep, fullQuality = _settings.PreviewFullQuality, theme = _settings.Theme, keyBindings = _settings.KeyBindings },
         };
+    }
+
+    /// <summary>Reads the open roll's previews through its cache folder, or straight from the source.</summary>
+    private void ApplyCache()
+    {
+        if (!_project.Roll.Loaded) return;
+        if (_settings.CachePreviews)
+        {
+            try { PreviewCache.Enable(_project.Roll, RollCacheFolder); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException) { PreviewCache.Disable(_project.Roll); }
+        }
+        else PreviewCache.Disable(_project.Roll);
+    }
+
+    private object CacheInfo()
+    {
+        bool loaded = _project.Roll.Loaded;
+        var (cached, total) = loaded ? PreviewCache.Count(_project.Roll, RollCacheFolder) : (0, 0);
+        return new
+        {
+            enabled = _settings.CachePreviews, folder = CacheRoot, customFolder = _settings.CacheFolder.Trim() != "",
+            loaded, rollFolder = loaded ? RollCacheFolder : "", cached, total,
+            rollBytes = loaded ? PreviewCache.SizeBytes(RollCacheFolder) : 0, allBytes = PreviewCache.SizeBytes(CacheRoot),
+            source = loaded ? PreviewCache.SourceFolder(_project.Roll) : "",
+            running = _cacheCts is not null, job = _cacheJob,
+            queue = _settings.CacheQueue.Select(p => new
+            {
+                path = p, name = Path.GetFileNameWithoutExtension(p),
+                status = _queueStatus.TryGetValue(p, out var s) ? s : Loc.T("waiting"),
+            }),
+        };
+    }
+
+    private IProgress<PreviewCache.Progress> CacheProgress() => new Progress<PreviewCache.Progress>(p =>
+        _bridge.Emit("cache.progress", new { p.Label, p.Current, p.Total, p.Copied, p.Skipped, p.Missing }));
+
+    private void SetQueueStatus(string path, string status) =>
+        _owner.Dispatcher.Invoke(() => { _queueStatus[path] = status; _bridge.Emit("cache.queue", null); });
+
+    private void AddToQueue(IEnumerable<string> paths)
+    {
+        foreach (string p in paths)
+            if (!_settings.CacheQueue.Contains(p, StringComparer.OrdinalIgnoreCase)) _settings.CacheQueue.Add(p);
+        _settings.Save();
+    }
+
+    /// <summary>One background cache job at a time (the open roll, or the queue), at low priority.</summary>
+    private void StartCacheJob(string label, Func<CancellationToken, bool> work)
+    {
+        if (_cacheCts is not null) throw new BridgeException(Loc.T("The cache is busy. Stop it first."));
+        var cts = new CancellationTokenSource();
+        _cacheCts = cts;
+        _cacheJob = label;
+        var thread = new Thread(() =>
+        {
+            bool ok = false;
+            try { ok = work(cts.Token); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException) { }
+            _owner.Dispatcher.Invoke(() =>
+            {
+                _cacheCts = null;
+                _cacheJob = "";
+                _bridge.Emit("cache.done", new { label, cancelled = cts.IsCancellationRequested || !ok });
+                cts.Dispose();
+            });
+        }) { IsBackground = true, Priority = ThreadPriority.BelowNormal, Name = "PreviewCache" };
+        thread.Start();
     }
 
     private static string[] ReportHeaders() =>
@@ -753,6 +919,7 @@ public sealed class AppController
         _export = ExportFromSettings(project.Roll);
         _panels = null;
         RestoreState(project.Roll);
+        ApplyCache();
         _imageVersion++;
         _settings.LastFolder = Path.GetDirectoryName(Path.GetFullPath(path)) ?? "";
         _settings.AddRecent(path);

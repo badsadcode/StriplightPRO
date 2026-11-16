@@ -1402,6 +1402,19 @@ const commands = {
   exportStop: () => call('export.cancel'),
   shortcuts: () => { renderKeysEditor(); $('#shortcuts-modal').hidden = false; },
   report: () => { $('#report-modal').hidden = false; refreshReport(); },
+  cache: async () => { $('#cache-modal').hidden = false; renderCache(await call('cache.info').catch(() => null)); },
+  cacheClose: () => { $('#cache-modal').hidden = true; },
+  cachePickFolder: async () => renderCache(await run('cache.pickFolder')),
+  cacheResetFolder: async () => renderCache(await run('cache.resetFolder')),
+  cacheOpenFolder: () => run('cache.openFolder'),
+  cacheStart: async () => renderCache(await run('cache.start')),
+  cacheStop: () => call('cache.stop'),
+  cacheClearRoll: async () => { if (confirm(t('Delete the cached previews of this roll?'))) renderCache(await run('cache.clearRoll')); },
+  cacheClearAll: async () => { if (confirm(t('Delete all cached previews on this computer?'))) renderCache(await run('cache.clearAll')); },
+  cacheAddFiles: async () => renderCache(await run('cache.queueAddFiles')),
+  cacheAddFolder: async () => renderCache(await run('cache.queueAddFolder')),
+  cacheQueueStart: async () => renderCache(await run('cache.queueStart')),
+  cacheQueueClear: async () => renderCache(await run('cache.queueClear')),
   reportClose: () => { $('#report-modal').hidden = true; },
   reportRefresh: () => refreshReport(),
   reportMfReset: () => { $('#rep-mf').value = ''; reportMfTyped = false; refreshReport(true); },
@@ -1438,6 +1451,7 @@ const commands = {
 document.addEventListener('click', (e) => {
   if (e.target.id === 'shortcuts-modal') { commands.shortcutsClose(); return; }
   if (e.target.id === 'report-modal') { commands.reportClose(); return; }
+  if (e.target.id === 'cache-modal') { commands.cacheClose(); return; }
   const el = e.target.closest('[data-cmd]');
   if (!el || el.disabled) return;
   const fn = commands[el.dataset.cmd];
@@ -1511,7 +1525,12 @@ document.addEventListener('keydown', (e) => {
     renderKeysEditor();
     return;
   }
-  // 2. the report sheet is open: Escape closes it
+  // 2. the cache sheet is open: Escape closes it
+  if (!$('#cache-modal').hidden) {
+    if (e.key === 'Escape') { e.preventDefault(); commands.cacheClose(); }
+    return;
+  }
+  // 2a. the report sheet is open: Escape closes it
   if (!$('#report-modal').hidden) {
     if (e.key === 'Escape') { e.preventDefault(); commands.reportClose(); }
     return;
@@ -1534,13 +1553,61 @@ document.addEventListener('keydown', (e) => {
   if (typing(e) && !(e.ctrlKey || e.metaKey)) return;
   const fn = commands[id];
   if (!fn) return;
-  const noRoll = ['open', 'shortcuts', 'theme', 'help'];
+  const noRoll = ['open', 'shortcuts', 'theme', 'help', 'cache'];
   if (!hasRoll() && !noRoll.includes(id)) return;
   e.preventDefault();
   Promise.resolve(fn()).catch(() => {});
 });
 
 // ------------------------------------------------------------------ host events
+
+// ------------------------------------------------------------------ preview cache
+
+const fmtBytes = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(2)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.round(b / 1e3)} kB`);
+
+function renderCache(c) {
+  if (!c) return;
+  $('#cache-on').checked = c.enabled;
+  $('#cache-folder').value = c.folder;
+  $('#cache-all').textContent = t('All caches: {size}', { size: fmtBytes(c.allBytes) });
+  $('#cache-roll').textContent = c.loaded
+    ? `${t('{cached} of {total} previews cached · {size}', { cached: c.cached.toLocaleString(), total: c.total.toLocaleString(), size: fmtBytes(c.rollBytes) })} · ${t('source')}: ${c.source}`
+    : t('Open a roll first.');
+  setBar('#cache-bar', c.cached, c.total);
+  $('#cache-start').disabled = !c.loaded || c.running;
+  $('#cache-qstart').disabled = c.running || !c.queue.length;
+  $('#cache-stop').disabled = !c.running;
+  if (c.running) $('#cache-status').textContent = t('Caching {name}…', { name: c.job });
+  const q = $('#cache-queue');
+  q.dataset.empty = t('No projects in the queue. Add .idf / .slf files or a folder with rolls.');
+  q.replaceChildren();
+  c.queue.forEach((item, i) => {
+    const li = document.createElement('li');
+    const name = document.createElement('span');
+    name.innerHTML = '<span class="q-name"></span><span class="q-path"></span>';
+    name.querySelector('.q-name').textContent = item.name;
+    name.querySelector('.q-path').textContent = item.path;
+    const st = document.createElement('span'); st.className = 'q-status'; st.textContent = item.status;
+    const x = document.createElement('button'); x.className = 'icon-btn'; x.innerHTML = icon('x'); x.title = t('Remove from the queue');
+    x.disabled = c.running;
+    x.addEventListener('click', async () => renderCache(await run('cache.queueRemove', { index: i })));
+    li.append(name, st, x);
+    q.append(li);
+  });
+}
+
+$('#cache-on').addEventListener('change', async (e) => renderCache(await run('cache.set', { enabled: e.target.checked })));
+on('cache.progress', (p) => {
+  if ($('#cache-modal').hidden) return;
+  setBar('#cache-bar', p.current, p.total);
+  $('#cache-status').textContent = `${p.label} · ${p.current.toLocaleString()} / ${p.total.toLocaleString()} · ` +
+    t('{copied} copied, {skipped} already cached, {missing} missing', { copied: p.copied, skipped: p.skipped, missing: p.missing });
+});
+on('cache.done', async (d) => {
+  status(d.cancelled ? t('Preview cache stopped') : t('Preview cache finished: {name}', { name: d.label }));
+  if (!$('#cache-modal').hidden) renderCache(await call('cache.info').catch(() => null));
+});
+on('cache.queue', async () => { if (!$('#cache-modal').hidden) renderCache(await call('cache.info').catch(() => null)); });
 
 // ------------------------------------------------------------------ handover report
 

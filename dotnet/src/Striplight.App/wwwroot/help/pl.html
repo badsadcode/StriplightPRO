@@ -266,6 +266,18 @@
   <p>Aby zmienić tłumaczenie, wybierz w tym menu <b>Edytuj tłumaczenie</b>. Striplight skopiuje <code>pl.json</code> do <code>%APPDATA%\StriplightPRO\lang\</code> i otworzy folder. Każdy wiersz łączy angielski tekst z tłumaczeniem; zmień prawą stronę i przełącz język ponownie, aby zobaczyć efekt. Twój plik ma pierwszeństwo przed wbudowanym i przetrwa aktualizacje. Usunięte wiersze wracają do wbudowanego tłumaczenia.</p>
 </section>
 
+<section id="cache">
+  <h2>Pamięć podręczna podglądów</h2>
+  <p>Przycisk <b>pamięci podręcznej</b> na górnym pasku kopiuje małe obrazy podglądu rolki z udziału sieciowego na ten komputer, dzięki czemu strony ładują się szybko nawet przy wolnym udziale albo gdy komputer jest zajęty eksportem. Kopiowane są tylko podglądy — pełne paski zostają na miejscu.</p>
+  <ul>
+    <li><b>Przechowuj podglądy lokalnie</b>: podglądy są kopiowane przy pierwszym użyciu (widok pasków, wykrywanie), a potem czytane z lokalnej kopii. To ustawienie dotyczy tego komputera.</li>
+    <li><b>Folder pamięci podręcznej</b>: domyślnie <code>%LOCALAPPDATA%\StriplightPRO\PreviewCache</code>; możesz wybrać inny (szybki, lokalny) folder. Każda rolka ma własny podfolder.</li>
+    <li><b>Zapisz teraz całą rolkę</b> kopiuje w tle (z niskim priorytetem) wszystkie podglądy otwartej rolki, z postępem i przyciskiem <b>Stop</b>. <b>Wyczyść tę rolkę</b> / <b>Wyczyść całą pamięć</b> zwalniają miejsce.</li>
+    <li><b>Menedżer pamięci podręcznej</b>: dodaj kilka projektów (<b>Dodaj projekty…</b> — pliki .idf / .slf, <b>Dodaj folder…</b> — wszystkie rolki z folderu) i naciśnij <b>Start</b> — będą kopiowane po kolei w trakcie pracy, np. jutrzejsze rolki przez noc.</li>
+  </ul>
+  <p>Podczas eksportu eksport działa z obniżonym priorytetem, więc widok pasków i podgląd pozostają płynne.</p>
+</section>
+
 <section id="files">
   <h2>Pliki, ustawienia i wskazówki</h2>
   <ul>

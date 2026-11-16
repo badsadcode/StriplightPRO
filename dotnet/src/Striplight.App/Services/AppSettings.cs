@@ -22,6 +22,12 @@ public sealed class AppSettings
     /// <summary>UI language: "en" (default) or "pl".</summary>
     public string Language { get; set; } = "en";
     /// <summary>Size check (Lazarus "Detect Oversized / Undersized Frames").</summary>
+    /// <summary>Preview cache (Lazarus "Cache previews"): read previews through a local copy.</summary>
+    public bool CachePreviews { get; set; }
+    /// <summary>Cache root; empty = %LOCALAPPDATA%\StriplightPRO\PreviewCache.</summary>
+    public string CacheFolder { get; set; } = "";
+    /// <summary>Cache manager queue: .idf / .slf paths to cache in the background.</summary>
+    public List<string> CacheQueue { get; set; } = [];
     public bool SizeOverOn { get; set; } = true;
     public int SizeOverPercent { get; set; } = 50;
     public bool SizeUnderOn { get; set; } = true;
