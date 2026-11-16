@@ -390,47 +390,44 @@ export class StripView {
       const segs = this.frameSegments(f);
       if (!segs.length) continue;
       const sel = this.selected.has(i);
-      // State colour, most important first: selected, exported, suggested, odd size, folder, normal.
-      const color = sel ? COLOR.selected
-        : f.isExported ? COLOR.exported
-        : f.isSuggested ? COLOR.suggested
-        : (f.isOversized || f.isUndersized) ? COLOR.abnormal
-        : f.isMarker ? COLOR.marker
-        : COLOR.normal;
+      // Main colour as in Lazarus: selected cyan, odd size red, otherwise green.
+      const main = sel ? COLOR.selected : (f.isOversized || f.isUndersized) ? COLOR.abnormal : COLOR.normal;
       for (const g of segs) {
         this.segments.push({ idx: i, ...g });
         const w = g.x2 - g.x1, h = g.y2 - g.y1;
+        const rect = (inset, width, stroke) => {
+          ctx.lineWidth = width;
+          ctx.strokeStyle = stroke;
+          ctx.strokeRect(g.x1 + inset, g.y1 + inset, Math.max(0, w - 2 * inset), Math.max(0, h - 2 * inset));
+        };
+
+        // Same layering as the Lazarus DrawFrameRect:
+        // 1. fill: folder yellow, else suggested magenta, else the main colour
         if (fill > 0) {
           ctx.globalAlpha = fill;
-          ctx.fillStyle = color;
-          ctx.beginPath();
-          ctx.roundRect(g.x1, g.y1, w, h, 3);
-          ctx.fill();
+          ctx.fillStyle = f.isMarker ? COLOR.marker : f.isSuggested ? COLOR.suggested : main;
+          ctx.fillRect(g.x1, g.y1, w, h);
           ctx.globalAlpha = 1;
         }
-        ctx.save();
-        if (sel) { ctx.shadowColor = COLOR.selected; ctx.shadowBlur = 12; }
-        ctx.lineWidth = sel ? 2 : 1.5;
-        ctx.strokeStyle = color;
-        ctx.setLineDash(f.isSuggested ? [5, 4] : []);
-        ctx.beginPath();
-        ctx.roundRect(g.x1 + 1, g.y1 + 1, Math.max(0, w - 2), Math.max(0, h - 2), 3);
-        ctx.stroke();
-        ctx.restore();
-
-        if (f.isMarker && g.isLead) {
-          // Folder marker: amber bar on the lead edge plus a folder-number pill.
-          ctx.fillStyle = COLOR.marker;
-          ctx.beginPath();
-          ctx.roundRect(g.x1, g.y1, 3.5, h, 2);
-          ctx.fill();
-          if (w > 30) this.pill(`F${folderOf.get(i)}`, g.x1 + 6, g.y1 + 5, COLOR.marker, '#1b1204', true);
+        // 2. exported: extra blue tint
+        if (f.isExported) {
+          ctx.globalAlpha = 70 / 255;
+          ctx.fillStyle = COLOR.exported;
+          ctx.fillRect(g.x1, g.y1, w, h);
+          ctx.globalAlpha = 1;
         }
-        if (g.isLead && (f.hasOverride || hasTone(f))) {
-          ctx.fillStyle = COLOR.perframe;
-          ctx.beginPath();
-          ctx.arc(g.x2 - 8, g.y1 + 8, 3.5, 0, Math.PI * 2);
-          ctx.fill();
+        // 3. per-frame settings: orange outer ring
+        if (f.hasOverride || hasTone(f)) rect(-5, 3, COLOR.perframe);
+        // 4. exported: blue inner border
+        if (f.isExported) rect(4, 2, COLOR.exported);
+        // 5. suggested (not a folder): thick magenta outer ring + thin inner ring
+        if (f.isSuggested && !f.isMarker) { rect(-3, 3, COLOR.suggested); rect(3, 1, COLOR.suggested); }
+        // 6. main border
+        rect(0, 2, main);
+        // 7. folder start: thicker yellow outline on top, plus the folder number
+        if (f.isMarker) {
+          rect(-1, 3, COLOR.marker);
+          if (g.isLead && w > 30) this.pill(`F${folderOf.get(i)}`, g.x1 + 6, g.y1 + 5, COLOR.marker, '#1b1204', true);
         }
         if (sel && g.isLead && w > 40 && h > 40) {
           ctx.font = '600 10.5px "Segoe UI Variable Text", "Segoe UI", sans-serif';
@@ -445,30 +442,20 @@ export class StripView {
   }
 
   drawHandles(g) {
-    const ctx = this.ctx;
+    // White squares with a black border, like Lazarus: corners and edge midpoints.
+    const ctx = this.ctx, hh = 5;
+    const sq = (x, y) => {
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(x - hh, y - hh, hh * 2, hh * 2);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = '#000';
+      ctx.strokeRect(x - hh + 0.5, y - hh + 0.5, hh * 2 - 1, hh * 2 - 1);
+    };
     const my = (g.y1 + g.y2) / 2, mx = (g.x1 + g.x2) / 2;
-    const dot = (x, y) => {
-      ctx.beginPath();
-      ctx.arc(x, y, 4.5, 0, Math.PI * 2);
-      ctx.fillStyle = '#fff';
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = COLOR.selected;
-      ctx.stroke();
-    };
-    const corner = (x, y) => {
-      ctx.fillStyle = '#fff';
-      ctx.strokeStyle = COLOR.selected;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.roundRect(x - 4.5, y - 4.5, 9, 9, 2);
-      ctx.fill();
-      ctx.stroke();
-    };
-    if (g.isLead) { dot(g.x1, my); corner(g.x1, g.y1); corner(g.x1, g.y2); }
-    if (g.isTrail) { dot(g.x2, my); corner(g.x2, g.y1); corner(g.x2, g.y2); }
-    dot(mx, g.y1);
-    dot(mx, g.y2);
+    if (g.isLead) { sq(g.x1, g.y1); sq(g.x1, my); sq(g.x1, g.y2); }
+    if (g.isTrail) { sq(g.x2, g.y1); sq(g.x2, my); sq(g.x2, g.y2); }
+    sq(mx, g.y1);
+    sq(mx, g.y2);
   }
 
   /** Split preview (Lazarus): dashed cut lines where S would split each selected frame. */

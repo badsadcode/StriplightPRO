@@ -23,13 +23,14 @@
   --ok: #34d399;
 
   /* frame overlay colours (meaning shared with the Lazarus edition) */
-  --f-normal: #34d399;
-  --f-abnormal: #f87171;
-  --f-marker: #fbbf24;
-  --f-selected: #38bdf8;
-  --f-suggested: #e879f9;
-  --f-perframe: #fb923c;
-  --f-exported: #60a5fa;
+  /* the Lazarus colours, so frames look the same in both editions */
+  --f-normal: #00cc00;
+  --f-abnormal: #cc0000;
+  --f-marker: #cccc00;
+  --f-selected: #00cccc;
+  --f-suggested: #cc00cc;
+  --f-perframe: #ff8000;
+  --f-exported: #0099ff;
 
   --r-sm: 6px;
   --r: 8px;
@@ -330,9 +331,10 @@ input[type="range"]:hover::-webkit-slider-thumb { box-shadow: 0 0 0 6px rgba(245
 .sw { width: 9px; height: 9px; border-radius: 3px; border: 2px solid; }
 .sw.normal { border-color: var(--f-normal); background: color-mix(in srgb, var(--f-normal) 35%, transparent); }
 .sw.abnormal { border-color: var(--f-abnormal); background: color-mix(in srgb, var(--f-abnormal) 35%, transparent); }
-.sw.marker { border-color: var(--f-marker); background: color-mix(in srgb, var(--f-marker) 45%, transparent); }
-.sw.suggested { border-color: var(--f-suggested); border-style: dashed; background: color-mix(in srgb, var(--f-suggested) 35%, transparent); }
-.sw.selected { border-color: var(--f-selected); background: rgba(56,189,248,.3); }
+.sw.marker { border-color: var(--f-marker); background: color-mix(in srgb, var(--f-marker) 35%, transparent); }
+.sw.suggested { border-color: var(--f-suggested); outline: 1px solid var(--f-suggested); outline-offset: 1px; background: color-mix(in srgb, var(--f-suggested) 35%, transparent); }
+.sw.selected { border-color: var(--f-selected); background: color-mix(in srgb, var(--f-selected) 35%, transparent); }
+.sw.perframe { border-color: var(--f-perframe); }
 .sw.exported { border-color: var(--f-exported); background: color-mix(in srgb, var(--f-exported) 35%, transparent); }
 #scrubber {
   width: 100%; height: 30px; border-radius: 10px; pointer-events: auto; cursor: pointer;
