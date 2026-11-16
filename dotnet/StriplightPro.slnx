@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Striplight.Core/Striplight.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Striplight.Core.Tests/Striplight.Core.Tests.csproj" />
+  </Folder>
+</Solution>
