@@ -39,7 +39,14 @@ public sealed class FrameBuilder(RollData roll, ProcessSettings settings, GraySt
         if (rot is not (0 or 90 or 180 or 270)) rot = 0;
 
         var t = s.Tone;
-        if (f.PerFrameContrast != -1 || f.PerFrameBrightness != -1 || f.PerFrameGamma != -1)
+        if (f.CustomToneMethod >= 0)
+        {
+            // Locked tone: the frame keeps exactly what it was given, whatever the global tone is now.
+            t = new ToneSettings(f.CustomToneMethod, f.CustomToneFlags,
+                f.CustomContrast, f.CustomBrightness, f.CustomGamma,
+                f.CustomStrength >= 0 ? f.CustomStrength : t.Strength);
+        }
+        else if (f.PerFrameContrast != -1 || f.PerFrameBrightness != -1 || f.PerFrameGamma != -1)
         {
             // Quantum per-frame values always use the Quantum-like method.
             t = new ToneSettings(ToneMethod.Quantum, 0,

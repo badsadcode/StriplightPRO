@@ -17,7 +17,7 @@ public sealed class TempDir : IDisposable
 
 public class ProjectFileTests
 {
-    private const string Idf = """
+    internal const string Idf = """
         <?xml version="1.0" encoding="utf-8"?>
         <Roll RollName="none" RollNumber="7" RollID="R-7">
           <StartScan />

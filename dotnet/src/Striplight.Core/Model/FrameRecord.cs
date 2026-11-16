@@ -30,6 +30,15 @@ public sealed class FrameRecord
     public int CustomBrightness { get; set; } = -1;
     public int CustomContrast { get; set; } = -1;
     public int CustomGamma { get; set; } = -1;
+    /// <summary>
+    /// Locked per-frame tone (Striplight PRO): when &gt;= 0 the frame uses its own complete tone
+    /// (this method, <see cref="CustomToneFlags"/>, the Custom* values and <see cref="CustomStrength"/>)
+    /// and later changes to the global tone never touch it. -1 = not locked (Lazarus behaviour:
+    /// any Custom* values replace only those sliders of the global tone).
+    /// </summary>
+    public int CustomToneMethod { get; set; } = -1;
+    public int CustomToneFlags { get; set; }
+    public int CustomStrength { get; set; } = -1;
 
     /// <summary>0, 90, 180 or 270 (clockwise).</summary>
     public int Rotation { get; set; }
@@ -44,7 +53,27 @@ public sealed class FrameRecord
 
     public bool HasToneOverride =>
         PerFrameBrightness != -1 || PerFrameContrast != -1 || PerFrameGamma != -1 ||
-        CustomBrightness != -1 || CustomContrast != -1 || CustomGamma != -1;
+        CustomBrightness != -1 || CustomContrast != -1 || CustomGamma != -1 || CustomToneMethod >= 0;
+
+    /// <summary>Gives this frame its own complete tone, independent of the global one.</summary>
+    public void LockTone(Imaging.ToneSettings t)
+    {
+        CustomToneMethod = t.Method; CustomToneFlags = t.Flags;
+        CustomContrast = t.Contrast; CustomBrightness = t.Brightness; CustomGamma = t.Gamma;
+        CustomStrength = t.Strength;
+        // QuantumScan reads only PerFrame* (Quantum ranges): keep them in step for Quantum methods.
+        bool quantum = Imaging.ToneAdjust.UsesQuantumRanges(t.Method);
+        PerFrameContrast = quantum ? t.Contrast : -1;
+        PerFrameBrightness = quantum ? t.Brightness : -1;
+        PerFrameGamma = quantum ? t.Gamma : -1;
+    }
+
+    public void ClearTone()
+    {
+        PerFrameBrightness = PerFrameContrast = PerFrameGamma = -1;
+        CustomBrightness = CustomContrast = CustomGamma = -1;
+        CustomToneMethod = -1; CustomToneFlags = 0; CustomStrength = -1;
+    }
 
     /// <summary>A frame worth saving: positive height and width.</summary>
     public bool IsPersistable => TrailEdge > LeadEdge && RightEdge > LeftEdge;

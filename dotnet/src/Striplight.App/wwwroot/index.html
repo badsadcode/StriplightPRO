@@ -277,7 +277,18 @@
       <section class="panel" data-panel="process" hidden>
         <header class="panel-head"><h2>Adjust</h2><p>Tone and orientation for every frame. The strip view updates live.</p></header>
         <div class="section">
-          <h3>Tone</h3>
+          <h3>Apply tone to</h3>
+          <div class="seg" id="tone-target" role="radiogroup" aria-label="Apply tone to">
+            <button data-v="all">All frames</button><button data-v="sel" id="tone-target-sel">Selected frames</button>
+          </div>
+          <p class="hint" id="tone-own"></p>
+          <div class="btn-grid">
+            <button class="btn" data-cmd="selectOwnTone" data-needs-roll title="Select every frame that has its own tone"><i data-icon="check-check"></i>Select own-tone</button>
+            <button class="btn" data-cmd="clearTone" data-needs-sel title="The selected frames follow the global tone again"><i data-icon="rotate-ccw"></i>Use global tone</button>
+          </div>
+        </div>
+        <div class="section">
+          <h3 id="tone-title">Tone</h3>
           <label class="field">Method<select id="tone-method"></select></label>
           <div class="slider" data-key="contrast"><span>Contrast</span><input type="number"><input type="range"></div>
           <div class="slider" data-key="brightness"><span>Brightness</span><input type="number"><input type="range"></div>

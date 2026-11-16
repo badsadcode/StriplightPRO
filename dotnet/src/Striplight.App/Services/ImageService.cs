@@ -47,8 +47,9 @@ public sealed class ImageService(AppController controller)
             string key = uri.PathAndQuery;
             Func<byte[]?> render = parts[0] switch
             {
-                "strip" => () => StripPreviewRenderer.RenderStrip(roll, index,
-                    process.PreviewOnStrips ? process.Tone : ToneSettings.Neutral, process.Negative, rotateCw),
+                "strip" when (process.PreviewOnStrips ? controller.FrameTonesOnStrip(index) : null) is var tones => () =>
+                    StripPreviewRenderer.RenderStrip(roll, index,
+                        process.PreviewOnStrips ? process.Tone : ToneSettings.Neutral, process.Negative, rotateCw, frameTones: tones),
                 // q=full: no downscaling (the preview's "Full quality" / 1:1 view).
                 "frame" when controller.SnapshotFrame(index) is { } frame => () =>
                     StripPreviewRenderer.RenderFrame(FrameBuilderFor(roll, process.ToProcessSettings(rotateCw)), frame,

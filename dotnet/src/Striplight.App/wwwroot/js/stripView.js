@@ -87,6 +87,8 @@ export class StripView {
 
   setFrames(frames, keepSelection = []) {
     this.frames = frames;
+    // Frames with their own tone are drawn in that tone on the strips: those strips reload.
+    this.toneSig = this.roll ? toneSignatures(frames, this.roll.lengthLines) : new Map();
     this.selected = new Set(keepSelection.filter((i) => i >= 0 && i < frames.length));
     this.invalidate();
   }
@@ -243,17 +245,19 @@ export class StripView {
 
   imageFor(strip) {
     let e = this.images.get(strip);
-    if (e && e.version === this.imageVersion) {
+    const sig = this.toneSig?.get(strip) || '';
+    const version = `${this.imageVersion}|${sig}`;
+    if (e && e.version === version) {
       this.images.delete(strip); // LRU: move to the end
       this.images.set(strip, e);
       return e;
     }
     const img = new Image();
     img.decoding = 'async';
-    e = { img, version: this.imageVersion, state: 'loading', stale: e && e.state === 'ok' ? e.img : null };
+    e = { img, version, state: 'loading', stale: e && e.state === 'ok' ? e.img : null };
     img.onload = () => { e.state = 'ok'; e.stale = null; this.invalidate(); };
     img.onerror = () => { e.state = 'missing'; e.stale = null; this.invalidate(); };
-    img.src = `https://img.striplight/strip/${strip}?v=${this.imageVersion}`;
+    img.src = `https://img.striplight/strip/${strip}?v=${this.imageVersion}` + (sig ? `&t=${sig}` : '');
     this.images.set(strip, e);
     const cap = Math.max(48, this.perPage * 3);
     while (this.images.size > cap) this.images.delete(this.images.keys().next().value);
@@ -903,5 +907,25 @@ export class StripView {
 
 export function hasTone(f) {
   return f.perFrameBrightness !== -1 || f.perFrameContrast !== -1 || f.perFrameGamma !== -1 ||
-    f.customBrightness !== -1 || f.customContrast !== -1 || f.customGamma !== -1;
+    f.customBrightness !== -1 || f.customContrast !== -1 || f.customGamma !== -1 || f.customToneMethod >= 0;
+}
+
+/** Short signature of the frames with their own tone on each strip (strip -> string). */
+function toneSignatures(frames, lengthLines) {
+  const parts = new Map();
+  for (const f of frames) {
+    if (!hasTone(f)) continue;
+    const key = [f.leadEdge, f.trailEdge, f.leftEdge, f.rightEdge, f.customToneMethod, f.customToneFlags,
+      f.customContrast, f.customBrightness, f.customGamma, f.customStrength,
+      f.perFrameContrast, f.perFrameBrightness, f.perFrameGamma].join(',');
+    const a = Math.floor(f.leadEdge / lengthLines), b = Math.floor(Math.max(f.leadEdge, f.trailEdge - 1) / lengthLines);
+    for (let s = a; s <= b; s++) parts.set(s, (parts.get(s) || '') + key + ';');
+  }
+  const out = new Map();
+  for (const [s, str] of parts) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    out.set(s, h.toString(36));
+  }
+  return out;
 }

@@ -16,6 +16,7 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 hydrateIcons();
 initSegmented($('#ovr-rotation'));
 initSegmented($('#det-scope'));
+initSegmented($('#tone-target'));
 initSegmented($('#proc-rotation'));
 initRanges();
 
@@ -37,7 +38,7 @@ const state = {
 };
 
 const view = new StripView($('#strip-canvas'), {
-  onSelectionChanged: () => { refreshFramesPanel(); scrubber.invalidate(); followInPreview(); },
+  onSelectionChanged: () => { refreshFramesPanel(); scrubber.invalidate(); followInPreview(); toneSelectionChanged(); },
   onPageChanged: () => { refreshPager(); scrubber.invalidate(); },
   onHover: (t) => { $('#status-hover').textContent = t; },
   onFramesEdited: (indices) => patchFrames(indices),
@@ -141,7 +142,10 @@ function applySession(s) {
   $('#det-to').value = s.roll.stripCount;
   $('#det-scope').value = 'all';
 
+  toneTarget = 'all'; globalProcess = null;
+  $('#tone-target').value = 'all';
   loadProcess(s.process);
+  refreshToneTarget();
   loadExport(s.export, s.defaultOutputRoot);
   refreshOverlays();
   setNotes(s.notes);
@@ -212,6 +216,15 @@ function renderRecent() {
 // ------------------------------------------------------------------ frames
 
 /** Replaces the page's frame list and keeps the selection on the same frames. */
+/** Selection changed: in "Selected frames" mode the sliders follow the (first) selected frame. */
+function toneSelectionChanged() {
+  if (toneTarget === 'sel') {
+    if (!view.selected.size) setToneTarget('all');
+    else loadSelectedTone();
+  }
+  refreshToneTarget();
+}
+
 function applyFrames(frames, keepKeys) {
   const keys = new Set(keepKeys ?? selection().map((i) => frameKey(view.frames[i])));
   state.session.frames = frames;
@@ -220,6 +233,7 @@ function applyFrames(frames, keepKeys) {
   view.setFrames(frames, keep);
   refreshFramesPanel();
   refreshRollMeta();
+  refreshToneTarget();
   scrubber.invalidate();
 }
 
@@ -320,6 +334,7 @@ function refreshFramesPanel() {
     ['Left → right', `${f.leftEdge} → ${f.rightEdge}`],
     ['Size', `${f.trailEdge - f.leadEdge} × ${f.rightEdge - f.leftEdge} px`],
   ];
+  if (f.customToneMethod >= 0) rows.push(['Own tone', `${state.toneMethods?.[f.customToneMethod] ?? 'method ' + f.customToneMethod} · C ${f.customContrast} · B ${f.customBrightness} · G ${f.customGamma}`]);
   if (f.hasOverride) rows.push(['Orientation', `${f.rotation}°${f.flipH ? ' · mirrored' : ''}${f.negative ? ' · negative' : ''}`]);
   if (hasTone(f)) rows.push(['Tone', 'own values (from file)']);
   card.replaceChildren();
@@ -536,6 +551,7 @@ $('#page-input').addEventListener('change', (e) => view.gotoPage((Number(e.targe
 
 // ------------------------------------------------------------------ adjust panel
 
+const TONE_KEYS = ['method', 'flags', 'contrast', 'brightness', 'gamma', 'strength'];
 const QUANTUM = { contrast: [-128, 255, 64], brightness: [-128, 127, 0], gamma: [-255, 255, 0] };
 const STRIPLIGHT = { contrast: [-100, 100, 0], brightness: [-100, 100, 0], gamma: [10, 300, 100] };
 const isQuantum = (m) => m === 1 || m === 4;
@@ -581,6 +597,15 @@ function loadProcess(p) {
 }
 
 function gatherProcess() {
+  const p = gatherControls();
+  // While the sliders show the selected frames' tone, the global tone is the stashed one.
+  if (toneTarget === 'sel' && globalProcess) {
+    for (const k of TONE_KEYS) p[k] = globalProcess[k];
+  }
+  return p;
+}
+
+function gatherControls() {
   return {
     method: Number($('#tone-method').value),
     flags: $$('#tone-flags input').reduce((acc, c) => acc | (c.checked ? Number(c.value) : 0), 0),
@@ -603,25 +628,92 @@ const sendProcess = debounce(async () => {
   if (r) { state.imageVersion = r.imageVersion; view.setImageVersion(r.imageVersion); }
 }, 180);
 
+// ---- per-frame tone ("Apply tone to: Selected frames")
+// A frame given its own tone keeps the complete tone (method, curves, sliders, strength), so
+// later changes to the global tone never touch it. The global values are stashed meanwhile.
+var toneTarget = 'all';      // 'all' | 'sel'
+var globalProcess = null;    // global tone while the sliders show the selected frames' tone
+let toneUndo = true;         // first change of an edit makes one undo step
+
+function toneFields() {
+  const p = gatherControls();
+  return Object.fromEntries(TONE_KEYS.map((k) => [k, p[k]]));
+}
+
+function setToneControls(t) {
+  $('#tone-method').value = t.method;
+  applyRanges(t.method, false);
+  setSlider('contrast', t.contrast);
+  setSlider('brightness', t.brightness);
+  setSlider('gamma', t.gamma);
+  setSlider('strength', t.strength);
+  $$('#tone-flags input').forEach((c) => { c.checked = (t.flags & Number(c.value)) !== 0; });
+}
+
+async function loadSelectedTone() {
+  const i = selection()[0];
+  if (i === undefined) return;
+  const t = await call('frames.toneOf', { index: i }).catch(() => null);
+  if (t && toneTarget === 'sel') setToneControls(t);
+  toneUndo = true;
+}
+
+async function setToneTarget(t) {
+  if (t === 'sel' && !view.selected.size) t = 'all';
+  $('#tone-target').value = t;
+  if (t === toneTarget) { refreshToneTarget(); return; }
+  if (t === 'sel') globalProcess = gatherControls();
+  else if (globalProcess) setToneControls(globalProcess);
+  toneTarget = t;
+  if (t === 'all') globalProcess = null; else await loadSelectedTone();
+  refreshToneTarget();
+}
+
+function refreshToneTarget() {
+  const n = view.selected.size, own = view.frames.filter(hasTone).length, sel = toneTarget === 'sel';
+  $('#tone-target-sel').textContent = n ? `Selected frames (${n.toLocaleString()})` : 'Selected frames';
+  $('#tone-target-sel').disabled = !n;
+  $('#tone-title').textContent = sel ? 'Tone · selected frames' : 'Tone · all frames';
+  $('[data-panel=process]').classList.toggle('tone-sel', sel);
+  $('#tone-own').textContent = sel
+    ? 'Changes here give the selected frames their own tone. Changing the global tone later leaves them as they are.'
+    : own ? `${own.toLocaleString()} frame${own === 1 ? ' has its' : 's have their'} own tone; global changes don't affect ${own === 1 ? 'it' : 'them'}.`
+      : 'Select frames and choose "Selected frames" to give them their own tone.';
+}
+
+const sendFrameTone = debounce(async () => {
+  if (!hasRoll() || toneTarget !== 'sel' || !view.selected.size) return;
+  const undo = toneUndo;
+  toneUndo = false;
+  const r = await call('frames.setTone', { indices: selection(), undo, ...toneFields() }).catch((e) => toast(e.message, 'error'));
+  if (r) applyFrames(r);
+}, 180);
+
+const toneChanged = () => (toneTarget === 'sel' ? sendFrameTone() : sendProcess());
+
+$('#tone-target').addEventListener('change', (e) => setToneTarget(e.target.value));
+
 let lastMethod = 0;
 $('#tone-method').addEventListener('focus', (e) => { lastMethod = Number(e.target.value); });
 $('#tone-method').addEventListener('change', (e) => {
   const m = Number(e.target.value);
   applyRanges(m, isQuantum(m) !== isQuantum(lastMethod)); // switching slider families resets to neutral
   lastMethod = m;
-  sendProcess();
+  toneChanged();
 });
 $$('.slider:not(.standalone)').forEach((el) => {
   const [r, n] = sliderInputs(el);
-  r.addEventListener('input', () => { n.value = r.value; sendProcess(); });
+  const send = el.dataset.key === 'sharpness' ? sendProcess : toneChanged; // sharpening stays global
+  r.addEventListener('input', () => { n.value = r.value; send(); });
   n.addEventListener('change', () => {
     n.value = Math.max(Number(n.min), Math.min(Number(n.max), Number(n.value) || 0));
     r.value = n.value;
     paintRange(r);
-    sendProcess();
+    send();
   });
 });
-$$('#tone-flags input, #sharp-mode, #proc-rotation, #proc-mirror, #proc-negative, #tone-on-strips')
+$$('#tone-flags input').forEach((el) => el.addEventListener('change', toneChanged));
+$$('#sharp-mode, #proc-rotation, #proc-mirror, #proc-negative, #tone-on-strips')
   .forEach((el) => el.addEventListener('change', sendProcess));
 
 // ------------------------------------------------------------------ detect panel
@@ -1001,6 +1093,19 @@ const commands = {
     rotation: Number($('#ovr-rotation').value), flipH: $('#ovr-mirror').checked, negative: $('#ovr-negative').checked,
   }),
   clearOverrides: () => frameCommand('frames.clearOverrides'),
+  clearTone: async () => {
+    await frameCommand('frames.clearTone');
+    if (toneTarget === 'sel') loadSelectedTone();
+    toast('Selected frames follow the global tone again');
+  },
+  selectOwnTone: () => {
+    const idx = view.frames.map((f, i) => (hasTone(f) ? i : -1)).filter((i) => i >= 0);
+    if (!idx.length) { toast('No frames have their own tone.'); return; }
+    view.setFrames(view.frames, idx);
+    refreshFramesPanel();
+    scrubber.invalidate();
+    toneSelectionChanged();
+  },
   detect,
   detectCancel: () => call('detect.cancel'),
   toneReset: () => {
@@ -1181,6 +1286,7 @@ async function init() {
   const info = await run('app.init');
   state.settings = info.settings;
   state.smoke = !!info.smoke;
+  state.toneMethods = info.toneMethods;
   $('#tone-method').replaceChildren(...info.toneMethods.map((name, i) => new Option(name, String(i))));
   $('#status-engine').textContent = `v${info.version} · ${info.turboJpeg}`;
   document.title = `Striplight PRO ${info.version}`;

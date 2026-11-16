@@ -65,8 +65,7 @@ public static class FrameEditor
             if (i < 0 || i >= frames.Count) continue;
             var f = frames[i];
             f.HasOverride = false; f.Rotation = 0; f.FlipH = false; f.FlipV = false; f.Negative = false;
-            f.PerFrameBrightness = f.PerFrameContrast = f.PerFrameGamma = -1;
-            f.CustomBrightness = f.CustomContrast = f.CustomGamma = -1;
+            f.ClearTone();
         }
     }
 

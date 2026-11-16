@@ -135,6 +135,8 @@ public static class ProjectFile
                     if (f.CustomBrightness != -1) sb.Append($" CustomBrightness=\"{I(f.CustomBrightness)}\"");
                     if (f.CustomContrast != -1) sb.Append($" CustomContrast=\"{I(f.CustomContrast)}\"");
                     if (f.CustomGamma != -1) sb.Append($" CustomGamma=\"{I(f.CustomGamma)}\"");
+                    if (f.CustomToneMethod >= 0)
+                        sb.Append($" CustomToneMethod=\"{I(f.CustomToneMethod)}\" CustomToneFlags=\"{I(f.CustomToneFlags)}\" CustomStrength=\"{I(f.CustomStrength)}\"");
                     if (f.Rotation != 0) sb.Append($" Rotation=\"{I(f.Rotation)}\"");
                     if (f.FlipH) sb.Append(" FlipH=\"True\"");
                     if (f.FlipV) sb.Append(" FlipV=\"True\"");
@@ -298,6 +300,9 @@ public static class ProjectFile
                 CustomBrightness = XmlAttr.Int(c, "CustomBrightness", -1),
                 CustomContrast = XmlAttr.Int(c, "CustomContrast", -1),
                 CustomGamma = XmlAttr.Int(c, "CustomGamma", -1),
+                CustomToneMethod = XmlAttr.Int(c, "CustomToneMethod", -1),
+                CustomToneFlags = XmlAttr.Int(c, "CustomToneFlags", 0),
+                CustomStrength = XmlAttr.Int(c, "CustomStrength", -1),
                 Rotation = XmlAttr.Int(c, "PerFrameRotate", XmlAttr.Int(c, "Rotation", 0)),
                 Negative = XmlAttr.Bool(c, "Negative"),
             };

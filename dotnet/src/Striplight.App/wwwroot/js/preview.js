@@ -50,7 +50,9 @@ async function load(index, { keepView = false } = {}) {
   const f = info.frame;
   const q = st.fullQuality || st.mode === 'one' ? 'full' : 'fit';
   const src = `https://img.striplight/frame/${info.index}?v=${info.imageVersion}` +
-    `&g=${f.leadEdge}:${f.trailEdge}:${f.leftEdge}:${f.rightEdge}:${info.rotation}:${info.mirror}:${info.negative}&q=${q}`;
+    `&g=${f.leadEdge}:${f.trailEdge}:${f.leftEdge}:${f.rightEdge}:${info.rotation}:${info.mirror}:${info.negative}` +
+    `&t=${[f.customToneMethod, f.customToneFlags, f.customContrast, f.customBrightness, f.customGamma, f.customStrength,
+      f.perFrameContrast, f.perFrameBrightness, f.perFrameGamma].join(':')}&q=${q}`;
   if (img.dataset.src === src) return;
   img.dataset.src = src;
   message('Building frame…', true);

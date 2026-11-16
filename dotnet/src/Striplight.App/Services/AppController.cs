@@ -73,6 +73,21 @@ public sealed class AppController
     public bool RotateCw => _settings.RotateCw;
     public ProcessDto Process => _process;
     public int FrameCount => _project.Frames.Count;
+    /// <summary>Frames with their own tone that touch a strip, with the tone each one uses.</summary>
+    public List<(FrameRecord Frame, ToneSettings Tone)> FrameTonesOnStrip(int strip)
+    {
+        var result = new List<(FrameRecord, ToneSettings)>();
+        int ll = _project.Roll.LengthLines;
+        if (ll <= 0) return result;
+        var ps = _process.ToProcessSettings(_settings.RotateCw);
+        foreach (var f in _project.Frames)
+        {
+            if (!f.HasToneOverride || f.LeadStrip(ll) > strip || (f.TrailEdge - 1) / ll < strip) continue;
+            result.Add((f.Clone(), FrameBuilder.Resolve(f, ps).Tone));
+        }
+        return result;
+    }
+
     public FrameRecord? SnapshotFrame(int index) =>
         index >= 0 && index < _project.Frames.Count ? _project.Frames[index].Clone() : null;
 
@@ -149,6 +164,36 @@ public sealed class AppController
             PushUndo();
             FrameEditor.ClearOverrides(_project.Frames, Indices(args));
             return Changed(args);
+        });
+        // Per-frame tone: the selected frames get their own complete tone, locked against later
+        // global changes. "undo": false while a slider is being dragged (one undo step per edit).
+        _bridge.On("frames.setTone", args =>
+        {
+            if (BridgeHost.Arg(args, "undo", true)) PushUndo();
+            var tone = new ToneSettings(
+                Math.Clamp(BridgeHost.Arg(args, "method", 0), 0, ToneMethod.Count - 1), BridgeHost.Arg(args, "flags", 0),
+                BridgeHost.Arg(args, "contrast", 0), BridgeHost.Arg(args, "brightness", 0),
+                BridgeHost.Arg(args, "gamma", 100), BridgeHost.Arg(args, "strength", ToneAdjust.StrengthDefault));
+            foreach (int i in Indices(args))
+                if (i >= 0 && i < _project.Frames.Count) _project.Frames[i].LockTone(tone);
+            return Changed(args);
+        });
+        _bridge.On("frames.clearTone", args =>
+        {
+            PushUndo();
+            foreach (int i in Indices(args))
+                if (i >= 0 && i < _project.Frames.Count) _project.Frames[i].ClearTone();
+            return Changed(args);
+        });
+        // The tone a frame uses now (its own, or the global one).
+        _bridge.On("frames.toneOf", args =>
+        {
+            int i = BridgeHost.Arg(args, "index", -1);
+            if (i < 0 || i >= _project.Frames.Count) return null;
+            var f = _project.Frames[i];
+            var t = FrameBuilder.Resolve(f, _process.ToProcessSettings(_settings.RotateCw)).Tone;
+            return new { method = t.Method, flags = t.Flags, contrast = t.Contrast, brightness = t.Brightness,
+                         gamma = t.Gamma, strength = t.Strength, own = f.HasToneOverride };
         });
         _bridge.On("frames.setOverride", args =>
         {
