@@ -36,6 +36,7 @@ export class StripView {
     this.stripsPerRow = 4;
     this.zoom = 1;
     this.fillOpacity = 35;
+    this.rotateCw = false;        // false: strips turned CCW (default), true: CW + mirror
     this.imageVersion = 1;
     this.images = new Map();      // stripIdx -> { img, version, state }
     this.segments = [];           // hit-test rectangles of the frames drawn on this page
@@ -79,7 +80,8 @@ export class StripView {
     this.invalidate();
   }
 
-  setView({ stripsPerRow, zoom, fillOpacity }) {
+  setView({ stripsPerRow, zoom, fillOpacity, rotateCw }) {
+    if (rotateCw !== undefined) this.rotateCw = !!rotateCw;
     if (stripsPerRow) this.stripsPerRow = Math.max(1, Math.min(20, stripsPerRow));
     if (zoom) this.zoom = Math.max(0.25, Math.min(4, zoom));
     if (fillOpacity !== undefined) this.fillOpacity = fillOpacity;
@@ -162,6 +164,25 @@ export class StripView {
     this.gotoPage(Math.floor(strip / this.perPage));
   }
 
+  // Across-the-film coordinates (LeftEdge/RightEdge) are columns of the stored, sideways
+  // strip, counted from its column 0. Turning the strip CCW puts column 0 at the BOTTOM of
+  // the screen; CW + mirror (a transpose) puts it at the TOP. Verified against QuantumScan
+  // detection on a real roll (B25465-B25587): its LeftEdge sits DetectOverscanWidth (100 px)
+  // before the paper in stored-image columns.
+  acrossToY(across) {
+    const a = this.rotateCw ? across : this.roll.widthPixels - across;
+    return a * this.pxPerAcross;
+  }
+
+  yToAcross(dy) {
+    const a = dy / this.pxPerAcross;
+    return this.rotateCw ? a : this.roll.widthPixels - a;
+  }
+
+  /** Frame edge shown at the top / bottom of the screen in the current orientation. */
+  get topEdge() { return this.rotateCw ? 'left' : 'right'; }
+  get bottomEdge() { return this.rotateCw ? 'right' : 'left'; }
+
   stripRect(i) {
     const row = Math.floor(i / this.stripsPerRow), col = i % this.stripsPerRow;
     return { x: this.originX + col * this.stripW, y: this.originY + row * this.stripH, w: this.stripW, h: this.stripH };
@@ -184,7 +205,7 @@ export class StripView {
     const strip = this.firstStrip + i;
     const ll = this.roll.lengthLines;
     const local = Math.max(0, Math.min(ll, (x - r.x) / this.pxPerLine));
-    const across = Math.max(0, Math.min(this.roll.widthPixels, (y - r.y) / this.pxPerAcross));
+    const across = Math.max(0, Math.min(this.roll.widthPixels, this.yToAcross(y - r.y)));
     return { strip, lead: Math.round(strip * ll + local), across: Math.round(across) };
   }
 
@@ -312,8 +333,8 @@ export class StripView {
       }
       const x1 = r.x + localLead * this.pxPerLine;
       const x2 = r.x + Math.min(ll, localTrail) * this.pxPerLine;
-      const y1 = r.y + f.leftEdge * this.pxPerAcross;
-      const y2 = r.y + f.rightEdge * this.pxPerAcross;
+      const ya = r.y + this.acrossToY(f.leftEdge), yb = r.y + this.acrossToY(f.rightEdge);
+      const y1 = Math.min(ya, yb), y2 = Math.max(ya, yb);
       const row = Math.floor((s - first) / this.stripsPerRow);
       if (cur && cur.row === row) {
         cur.x2 = Math.max(cur.x2, x2);
@@ -449,8 +470,8 @@ export class StripView {
       const inX = x >= g.x1 - HANDLE && x <= g.x2 + HANDLE;
       if (g.isLead && inY && Math.abs(x - g.x1) <= HANDLE) return { idx: g.idx, edge: 'lead' };
       if (g.isTrail && inY && Math.abs(x - g.x2) <= HANDLE) return { idx: g.idx, edge: 'trail' };
-      if (inX && Math.abs(y - g.y1) <= HANDLE) return { idx: g.idx, edge: 'left' };
-      if (inX && Math.abs(y - g.y2) <= HANDLE) return { idx: g.idx, edge: 'right' };
+      if (inX && Math.abs(y - g.y1) <= HANDLE) return { idx: g.idx, edge: this.topEdge };
+      if (inX && Math.abs(y - g.y2) <= HANDLE) return { idx: g.idx, edge: this.bottomEdge };
     }
     return null;
   }

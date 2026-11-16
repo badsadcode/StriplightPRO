@@ -325,7 +325,10 @@ $('#strips-per-row').addEventListener('change', (e) => {
   view.setView({ stripsPerRow: Number(e.target.value) || 4 });
   sendView();
 });
-$('#rotate-cw').addEventListener('change', sendView);
+$('#rotate-cw').addEventListener('change', () => {
+  view.setView({ rotateCw: $('#rotate-cw').checked }); // frame boxes flip with the image
+  sendView();
+});
 $('#page-input').addEventListener('change', (e) => view.gotoPage((Number(e.target.value) || 1) - 1));
 
 // ------------------------------------------------------------------ adjust panel
@@ -429,8 +432,10 @@ async function detect() {
     minLength: Number($('#det-minl').value),
     stripFrom: Math.max(0, (Number($('#det-from').value) || 1) - 1),
     stripTo: Math.min(stripCount - 1, (Number($('#det-to').value) || stripCount) - 1),
-    leftInset: Number($('#det-left').value) || 0,
-    rightInset: Number($('#det-right').value) || 0,
+    // Insets are counted from stored column 0, which is the bottom of the screen in the
+    // default CCW orientation and the top in CW mode. The fields are labelled as seen on screen.
+    leftInset: Number($(view.rotateCw ? '#det-left' : '#det-right').value) || 0,
+    rightInset: Number($(view.rotateCw ? '#det-right' : '#det-left').value) || 0,
     useToneSliders: $('#det-tone').checked,
   };
   state.detecting = true;
@@ -834,7 +839,7 @@ async function init() {
   $('#zoom').value = Math.round(s.zoom * 100);
   paintRange($('#zoom'));
   $('#zoom-out').textContent = `${Math.round(s.zoom * 100)}%`;
-  view.setView({ stripsPerRow: s.stripsPerRow, zoom: s.zoom, fillOpacity: s.frameFillOpacity });
+  view.setView({ stripsPerRow: s.stripsPerRow, zoom: s.zoom, fillOpacity: s.frameFillOpacity, rotateCw: s.rotateCw });
   applyRanges(0, true);
   renderRecent();
   if (info.session) applySession(info.session);
