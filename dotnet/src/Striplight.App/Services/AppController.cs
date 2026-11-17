@@ -450,14 +450,28 @@ public sealed class AppController
             _settings.PreviewTopmost = BridgeHost.Arg(args, "topmost", _settings.PreviewTopmost);
             _settings.PreviewStep = Math.Clamp(BridgeHost.Arg(args, "step", _settings.PreviewStep), 1, 1000);
             _settings.PreviewFullQuality = BridgeHost.Arg(args, "fullQuality", _settings.PreviewFullQuality);
+            _settings.PreviewPerFrame = BridgeHost.Arg(args, "perFrame", _settings.PreviewPerFrame);
             _host.SetPreviewTopmost(_settings.PreviewTopmost);
             return null;
         });
         _bridge.On("preview.orient", args =>
         {
-            // Per-frame orientation from the preview: R / Rot -90, M mirror, N negative.
+            // Preview R / Rot -90, M mirror, N negative. As in the Lazarus edition they change the
+            // GLOBAL orientation (all frames), unless "This frame only" is on: then only this frame.
             int i = BridgeHost.Arg(args, "index", -1);
             if (i < 0 || i >= _project.Frames.Count) return null;
+            if (!BridgeHost.Arg(args, "perFrame", false))
+            {
+                _process.Rotation = (((_process.Rotation + BridgeHost.Arg(args, "rotate", 0)) % 360) + 360) % 360;
+                if (BridgeHost.Arg(args, "mirror", false)) _process.Mirror = !_process.Mirror;
+                if (BridgeHost.Arg(args, "negative", false)) _process.Negative = !_process.Negative;
+                _process.StoreTo(_project.Roll);
+                MarkDirty();
+                ++_imageVersion;
+                _bridge.Emit("orientation.changed", new { rotation = _process.Rotation, mirror = _process.Mirror, negative = _process.Negative, imageVersion = _imageVersion });
+                _bridge.Emit("images.changed", new { imageVersion = _imageVersion });
+                return PreviewFrameInfo(i);
+            }
             PushUndo();
             var f = _project.Frames[i];
             if (!f.HasOverride)
@@ -749,7 +763,7 @@ public sealed class AppController
             width = quarter ? f.Width : (int)f.Height, height = quarter ? (int)f.Height : f.Width,
             rotation = p.Rotation, mirror = p.FlipH, negative = p.Negative, ownOrientation = f.HasOverride,
             imageVersion = _imageVersion,
-            settings = new { topmost = _settings.PreviewTopmost, step = _settings.PreviewStep, fullQuality = _settings.PreviewFullQuality, theme = _settings.Theme, keyBindings = _settings.KeyBindings },
+            settings = new { topmost = _settings.PreviewTopmost, step = _settings.PreviewStep, fullQuality = _settings.PreviewFullQuality, perFrame = _settings.PreviewPerFrame, theme = _settings.Theme, keyBindings = _settings.KeyBindings },
         };
     }
 

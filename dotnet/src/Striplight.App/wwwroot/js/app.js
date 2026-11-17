@@ -1735,6 +1735,15 @@ document.addEventListener('pointerdown', (e) => {
   if (!e.target.closest('#lang-menu, [data-cmd=langMenu]')) $('#lang-menu').hidden = true;
 });
 
+// The preview window changed the global orientation (R / M / N without "This frame only").
+on('orientation.changed', (o) => {
+  $('#proc-rotation').value = o.rotation;
+  $('#proc-mirror').checked = o.mirror;
+  $('#proc-negative').checked = o.negative;
+  if (state.session) state.session.process = { ...state.session.process, rotation: o.rotation, mirror: o.mirror, negative: o.negative };
+  state.imageVersion = o.imageVersion;
+});
+
 on('project.dirty', setDirty);
 on('toast', (m) => toast(m));
 on('keymap.changed', (b) => { keymap.setOverrides(b); if (!$('#shortcuts-modal').hidden) renderKeysEditor(); });

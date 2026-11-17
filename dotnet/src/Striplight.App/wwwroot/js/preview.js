@@ -24,6 +24,7 @@ const st = {
   mode: 'fit',            // 'fit' | 'one' | 'free'
   fullQuality: false,
   topmost: false,
+  perFrame: false,     // R / M / N change only this frame (else the global orientation)
   step: 1,
   loadedOnce: false,
 };
@@ -41,6 +42,7 @@ async function load(index, { keepView = false } = {}) {
   if (!st.loadedOnce) {
     st.fullQuality = s.fullQuality;
     st.topmost = s.topmost;
+    st.perFrame = !!s.perFrame;
     st.step = s.step;
     $('#pv-step').value = s.step;
     document.documentElement.dataset.theme = s.theme;
@@ -86,6 +88,7 @@ function render(info) {
   press('#pv-marker', f.isMarker);
   press('#pv-quality', st.fullQuality);
   press('#pv-topmost', st.topmost);
+  press('#pv-perframe', st.perFrame);
 }
 
 /** The target banner: folder number, target folder segments and file name, big enough to compare. */
@@ -226,7 +229,7 @@ function goMarker(forward) {
 }
 
 async function orient(args) {
-  const info = await call('preview.orient', { index: st.index, source: 'preview', ...args }).catch(() => null);
+  const info = await call('preview.orient', { index: st.index, source: 'preview', perFrame: st.perFrame, ...args }).catch(() => null);
   if (info) load(info.index, { keepView: true });
 }
 
@@ -236,7 +239,7 @@ async function toggleMarker() {
 }
 
 function saveSettings() {
-  call('preview.settings', { topmost: st.topmost, step: st.step, fullQuality: st.fullQuality }).catch(() => {});
+  call('preview.settings', { topmost: st.topmost, step: st.step, fullQuality: st.fullQuality, perFrame: st.perFrame }).catch(() => {});
 }
 
 const actions = {
@@ -255,6 +258,7 @@ const actions = {
   one: () => setMode('one'),
   quality: () => { st.fullQuality = !st.fullQuality; saveSettings(); load(st.index, { keepView: true }); },
   topmost: () => { st.topmost = !st.topmost; press('#pv-topmost', st.topmost); saveSettings(); },
+  perFrame: () => { st.perFrame = !st.perFrame; press('#pv-perframe', st.perFrame); saveSettings(); },
 };
 
 document.addEventListener('click', (e) => {
@@ -277,7 +281,7 @@ document.addEventListener('keydown', (e) => {
     'pv.rotR': actions.rotR, 'pv.rotL': actions.rotL, 'pv.mirror': actions.mirror, 'pv.negative': actions.negative,
     'pv.marker': actions.marker, 'pv.zoomIn': actions.zoomIn, 'pv.zoomOut': actions.zoomOut,
     'pv.fit': actions.fit, 'pv.one': actions.one, 'pv.quality': actions.quality, 'pv.topmost': actions.topmost,
-    'pv.target': toggleTarget, 'pv.close': () => call('preview.close').catch(() => {}),
+    'pv.target': toggleTarget, 'pv.perFrame': actions.perFrame, 'pv.close': () => call('preview.close').catch(() => {}),
   };
   const fn = id && map[id];
   if (fn) { e.preventDefault(); fn(); }

@@ -41,6 +41,8 @@ public sealed class AppSettings
     public bool PreviewTopmost { get; set; }
     public int PreviewStep { get; set; } = 1;
     public bool PreviewFullQuality { get; set; }
+    /// <summary>Preview R / M / N change only the current frame (Lazarus "Per-frame"); off = the global orientation.</summary>
+    public bool PreviewPerFrame { get; set; }
     public double? PreviewLeft { get; set; }
     public double? PreviewTop { get; set; }
     public double PreviewWidth { get; set; } = 960;

@@ -73,6 +73,7 @@ export const COMMANDS = [
   { id: 'pv.rotL', group: 'preview', section: 'Preview window', label: 'Rotate −90°', keys: ['Shift+R'] },
   { id: 'pv.mirror', group: 'preview', section: 'Preview window', label: 'Mirror', keys: ['M'] },
   { id: 'pv.negative', group: 'preview', section: 'Preview window', label: 'Negative', keys: ['N'] },
+  { id: 'pv.perFrame', group: 'preview', section: 'Preview window', label: 'This frame only on/off (R/M/N per frame)', keys: ['P'] },
   { id: 'pv.marker', group: 'preview', section: 'Preview window', label: 'Toggle folder marker', keys: ['A'] },
   { id: 'pv.zoomIn', group: 'preview', section: 'Preview window', label: 'Zoom in', keys: ['+', '='] },
   { id: 'pv.zoomOut', group: 'preview', section: 'Preview window', label: 'Zoom out', keys: ['-'] },
