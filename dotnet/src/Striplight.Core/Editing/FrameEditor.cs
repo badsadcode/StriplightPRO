@@ -74,6 +74,20 @@ public static class FrameEditor
         Refresh(frames);
     }
 
+    /// <summary>Clears only the per-frame orientation (rotation/flip/negative): the frames follow the global one again.</summary>
+    public static int ClearOrientation(List<FrameRecord> frames, IEnumerable<int>? indices = null)
+    {
+        int n = 0;
+        foreach (int i in indices ?? Enumerable.Range(0, frames.Count))
+        {
+            if (i < 0 || i >= frames.Count || !frames[i].HasOverride) continue;
+            var f = frames[i];
+            f.HasOverride = false; f.Rotation = 0; f.FlipH = false; f.FlipV = false; f.Negative = false;
+            n++;
+        }
+        return n;
+    }
+
     /// <summary>Clears per-frame overrides (rotation/flip/negative and tone) on the given frames.</summary>
     public static void ClearOverrides(List<FrameRecord> frames, IEnumerable<int> indices)
     {

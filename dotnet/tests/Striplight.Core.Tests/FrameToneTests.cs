@@ -1,3 +1,4 @@
+using Striplight.Core.Editing;
 using Striplight.Core.Export;
 using Striplight.Core.Imaging;
 using Striplight.Core.IO;
@@ -82,5 +83,29 @@ public class FrameToneTests
         string qpf = t.File("roll.qpf");
         ProjectFile.SaveQpf(qpf, t.File("roll.idf"), new Project { Roll = roll, Frames = frames });
         Assert.DoesNotContain("StriplightState", File.ReadAllText(qpf));
+    }
+
+    [Fact]
+    public void PerFrameToneDoesNotPinTheOrientation()
+    {
+        using var t = new TempDir();
+        File.WriteAllText(t.File("roll.idf"), ProjectFileTests.Idf);
+        IdfParser.Parse(t.File("roll.idf"), out var roll, out var frames);
+        frames[0].PerFrameBrightness = 12;        // QuantumScan per-frame tone
+        frames[0].HasOverride = true;             // what the Lazarus edition writes for it
+        frames[1].Rotation = 90; frames[1].HasOverride = true;
+        string slf = t.File("roll.slf");
+        ProjectFile.SaveSlf(slf, t.File("roll.idf"), new Project { Roll = roll, Frames = frames });
+        Assert.True(ProjectFile.TryLoadProject(slf, out var loaded));
+
+        Assert.False(loaded.Frames[0].HasOverride);   // follows the global orientation
+        Assert.True(loaded.Frames[1].HasOverride);    // a real own orientation stays
+        var global = new ProcessSettings { Rotation = 180, FlipH = true };
+        Assert.Equal((180, true), (FrameBuilder.Resolve(loaded.Frames[0], global).Rotation, FrameBuilder.Resolve(loaded.Frames[0], global).FlipH));
+        Assert.Equal(90, FrameBuilder.Resolve(loaded.Frames[1], global).Rotation);
+
+        Assert.Equal(1, FrameEditor.ClearOrientation(loaded.Frames));   // "All frames follow this"
+        Assert.Equal(180, FrameBuilder.Resolve(loaded.Frames[1], global).Rotation);
+        Assert.Equal(12, loaded.Frames[0].PerFrameBrightness);          // tone untouched
     }
 }

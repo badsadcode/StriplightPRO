@@ -152,6 +152,7 @@ function applySession(s) {
   $('#tone-target').value = 'all';
   loadProcess(s.process);
   refreshToneTarget();
+  refreshOrientOwn();
   detectResume = null;
   reportMfTyped = false;
   $('#report-modal').hidden = true;
@@ -173,6 +174,16 @@ function applySession(s) {
   scrubber.invalidate();
   status(t('Opened {file}', { file: fileName(s.projectPath || s.idfPath) }));
   $('#strip-canvas').focus();
+}
+
+// ------------------------------------------------------------------ global orientation: frames with their own
+
+function refreshOrientOwn() {
+  const n = view.frames.filter((f) => f.hasOverride).length;
+  $('#orient-own').textContent = n
+    ? tn(n, '{n} frame has its own orientation and ignores this setting.', '{n} frames have their own orientation and ignore this setting.')
+    : t('Applies to every frame (shown in the preview window and the export; the strips stay as scanned).');
+  $('#orient-all').hidden = !n;
 }
 
 // ------------------------------------------------------------------ fill gaps: limit and preview
@@ -339,6 +350,7 @@ function applyFrames(frames, keepKeys) {
   view.setFrames(frames, keep);
   refreshFramesPanel();
   refreshGapPreview();
+  refreshOrientOwn();
   refreshRollMeta();
   refreshToneTarget();
   scrubber.invalidate();
@@ -1389,6 +1401,13 @@ const commands = {
     rotation: Number($('#ovr-rotation').value), flipH: $('#ovr-mirror').checked, negative: $('#ovr-negative').checked,
   }),
   clearOverrides: () => frameCommand('frames.clearOverrides'),
+  orientAll: async () => {
+    const n = view.frames.filter((f) => f.hasOverride).length;
+    if (!n || !confirm(tn(n, '{n} frame has its own orientation. Let it follow the global orientation?', '{n} frames have their own orientation. Let them follow the global orientation?'))) return;
+    const r = await run('frames.clearOrientationAll');
+    applyFrames(r.frames);
+    status(tn(r.count, '{n} frame follows the global orientation again', '{n} frames follow the global orientation again'));
+  },
   clearTone: async () => {
     await frameCommand('frames.clearTone');
     if (toneTarget === 'sel') loadSelectedTone();

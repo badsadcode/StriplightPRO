@@ -9,13 +9,15 @@ public class StripPrefetcherTests
     public void ReadsAheadInOrderAndEveryFileOnce()
     {
         var reads = new ConcurrentQueue<string>();
+        byte[] Read(string x) { reads.Enqueue(x); Thread.Sleep(20); return [(byte)x[1]]; }
         var paths = new[] { "s1", "s2", "s2", "s3", "s4", "s5", "s6" };
-        using var p = new StripPrefetcher(paths, ahead: 2, readers: 2, read: x => { reads.Enqueue(x); Thread.Sleep(20); return [(byte)x[1]]; });
+        using var p = new StripPrefetcher(paths, ahead: 2, readers: 2, read: Read);
 
         Thread.Sleep(300);                        // only the window is fetched before anyone asks
         Assert.True(reads.Count <= 3);
+        // Like the export: a file the read-ahead has not scheduled yet is read by the worker itself.
         foreach (string s in new[] { "s1", "s2", "s3", "s4", "s5", "s6" })
-            Assert.Equal((byte)s[1], p.Take(s)![0]);
+            Assert.Equal((byte)s[1], (p.Take(s) ?? Read(s))[0]);
         Assert.Equal(6, reads.Count);             // s2 listed twice, read once
         Assert.Equal(6, reads.Distinct().Count());
         Assert.Null(p.Take("s3"));                // handed out once; a second use reads the file again

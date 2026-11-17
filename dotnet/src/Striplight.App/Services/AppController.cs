@@ -197,6 +197,14 @@ public sealed class AppController
             FrameEditor.ClearMarkers(_project.Frames);
             return Changed(args);
         });
+        // Adjust → Orientation "All frames follow this": drop every per-frame orientation (tone stays).
+        _bridge.On("frames.clearOrientationAll", args =>
+        {
+            PushUndo();
+            int n = FrameEditor.ClearOrientation(_project.Frames);
+            Changed(args);
+            return new { frames = _project.Frames, count = n };
+        });
         _bridge.On("frames.clearOverrides", args =>
         {
             PushUndo();

@@ -316,8 +316,11 @@ public static class ProjectFile
             };
             f.FlipH = (flip & 1) != 0 || XmlAttr.Bool(c, "FlipH");
             f.FlipV = (flip & 2) != 0 || XmlAttr.Bool(c, "FlipV");
-            f.HasOverride = XmlAttr.Bool(c, "HasOverride") || f.Rotation != 0 || flip != 0 ||
-                            f.PerFrameBrightness != -1 || f.PerFrameContrast != -1 || f.PerFrameGamma != -1;
+            // Own orientation only when the frame really has one. Per-frame tone (PerFrame* values)
+            // and a bare HasOverride="True" with default values (the Lazarus edition writes it for
+            // any per-frame setting) must not pin a frame to 0° and make it ignore the global
+            // rotation / mirror / negative.
+            f.HasOverride = f.Rotation != 0 || flip != 0 || f.FlipH || f.FlipV || f.Negative;
             if (!f.IsPersistable) continue;
             f.Index = frames.Count;
             frames.Add(f);

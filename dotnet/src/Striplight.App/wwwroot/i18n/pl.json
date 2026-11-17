@@ -234,6 +234,8 @@
   "Amount": "Ilość",
   "Orientation": "Orientacja",
   "all frames": "wszystkie klatki",
+  "Remove the per-frame orientations so every frame follows the orientation above (per-frame tone stays)": "Usuń orientację poszczególnych klatek, aby każda klatka używała orientacji powyżej (tonacja klatek zostaje)",
+  "All frames follow this": "Wszystkie klatki według tego",
   "Write every frame as a JPEG, exactly as the frame preview shows it.": "Zapisuje każdą klatkę jako JPEG, dokładnie tak, jak pokazuje ją podgląd.",
   "Destination": "Miejsce docelowe",
   "Output folder": "Folder wyjściowy",
@@ -340,6 +342,7 @@
   "Folder start": "Początek folderu",
   "Untitled roll": "Rolka bez nazwy",
   "Opened {file}": "Otwarto {file}",
+  "Applies to every frame (shown in the preview window and the export; the strips stay as scanned).": "Dotyczy każdej klatki (widać to w oknie podglądu i w eksporcie; paski zostają tak, jak zostały zeskanowane).",
   "Preparing the demo roll…": "Przygotowywanie rolki demo…",
   "Demo roll opened. Try Detect, Adjust and Export, or drag frames around.": "Otwarto rolkę demo. Wypróbuj Wykrywanie, Korektę i Eksport albo poprzeciągaj klatki.",
   "Saved {file}": "Zapisano {file}",
@@ -429,6 +432,12 @@
   "Preview cache finished: {name}": "Zapisywanie podglądów zakończone: {name}",
   "Total": "Razem",
   "Open this page through StriplightPRO.exe — it needs the desktop host.": "Otwórz tę stronę przez StriplightPRO.exe — potrzebuje aplikacji desktopowej.",
+  "{n} frames have their own orientation and ignore this setting.": {
+    "one": "{n} klatka ma własną orientację i pomija to ustawienie.",
+    "few": "{n} klatki mają własną orientację i pomijają to ustawienie.",
+    "many": "{n} klatek ma własną orientację i pomija to ustawienie.",
+    "other": "{n} klatki mają własną orientację i pomijają to ustawienie."
+  },
   "{n} strips": {
     "one": "{n} pasek",
     "few": "{n} paski",
@@ -572,6 +581,18 @@
     "few": "pominięto {n} duże przerwy",
     "many": "pominięto {n} dużych przerw",
     "other": "pominięto {n} duże przerwy"
+  },
+  "{n} frames have their own orientation. Let them follow the global orientation?": {
+    "one": "{n} klatka ma własną orientację. Czy ma używać orientacji globalnej?",
+    "few": "{n} klatki mają własną orientację. Czy mają używać orientacji globalnej?",
+    "many": "{n} klatek ma własną orientację. Czy mają używać orientacji globalnej?",
+    "other": "{n} klatki mają własną orientację. Czy mają używać orientacji globalnej?"
+  },
+  "{n} frames follow the global orientation again": {
+    "one": "{n} klatka znowu używa orientacji globalnej",
+    "few": "{n} klatki znowu używają orientacji globalnej",
+    "many": "{n} klatek znowu używa orientacji globalnej",
+    "other": "{n} klatki znowu używają orientacji globalnej"
   },
   "Created {n} folders in {folder}": {
     "one": "Utworzono {n} folder w {folder}",
