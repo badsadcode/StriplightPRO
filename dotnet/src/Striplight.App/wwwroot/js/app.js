@@ -16,6 +16,7 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 hydrateIcons();
 initSegmented($('#ovr-rotation'));
+initSegmented($('#ovr-target'));
 initSegmented($('#det-scope'));
 initSegmented($('#tone-target'));
 initSegmented($('#proc-rotation'));
@@ -231,7 +232,7 @@ const PANEL_FIELDS = [
   // frames: split, repair, expand, trim, per-frame orientation
   '#split-parts', '#split-preview', '#join-gap', '#join-show', '#ex-l', '#ex-r', '#ex-t', '#ex-b',
   '#gap-mode', '#gap-factor', '#gap-px', '#gap-show',
-  '#trim-show', '#trim-top', '#trim-bottom', '#ovr-rotation', '#ovr-mirror', '#ovr-negative',
+  '#trim-show', '#trim-top', '#trim-bottom', '#ovr-target', '#ovr-rotation', '#ovr-mirror', '#ovr-negative',
   // export
   '#exp-follow',
 ];
@@ -859,7 +860,30 @@ async function setToneTarget(t) {
   refreshToneTarget();
 }
 
+// ---- Frames → Frame orientation target (All frames / Selected frames)
+const ovrTarget = () => ($('#ovr-target').value === 'sel' ? 'sel' : 'all');
+
+function refreshOvrTarget() {
+  const n = view.selected.size, all = ovrTarget() === 'all';
+  $('#ovr-target-sel').textContent = n ? `${t('Selected frames')} (${n.toLocaleString()})` : t('Selected frames');
+  const own = view.frames.filter((f) => f.hasOverride).length;
+  $('#ovr-hint').textContent = all
+    ? t('Apply rotates / mirrors every frame (the global orientation). Clear lets frames with their own orientation follow it again.')
+    : t('Apply gives the selected frames their own orientation (orange). Clear returns them to the global one.')
+      + (own ? ' ' + tn(own, '{n} frame has its own orientation.', '{n} frames have their own orientation.') : '');
+}
+
+$('#ovr-target').addEventListener('change', () => {
+  if (ovrTarget() === 'all') {          // show the current global orientation
+    $('#ovr-rotation').value = Number($('#proc-rotation').value) || 0;
+    $('#ovr-mirror').checked = $('#proc-mirror').checked;
+    $('#ovr-negative').checked = $('#proc-negative').checked;
+  }
+  refreshOvrTarget();
+});
+
 function refreshToneTarget() {
+  refreshOvrTarget();
   const n = view.selected.size, own = view.frames.filter(hasTone).length, sel = toneTarget === 'sel';
   $('#tone-target-sel').textContent = n ? `${t('Selected frames')} (${n.toLocaleString()})` : t('Selected frames');
   $('#tone-target-sel').disabled = !n;
@@ -1397,10 +1421,32 @@ const commands = {
     if (!confirm(t('Remove every folder marker on this roll?'))) return;
     applyFrames(await run('frames.clearMarkers'));
   },
-  applyOverride: () => frameCommand('frames.setOverride', {
-    rotation: Number($('#ovr-rotation').value), flipH: $('#ovr-mirror').checked, negative: $('#ovr-negative').checked,
-  }),
-  clearOverrides: () => frameCommand('frames.clearOverrides'),
+  // Frames → Frame orientation: "All frames" sets the global orientation (same as Adjust → Orientation),
+  // "Selected frames" gives the selection its own orientation (orange).
+  applyOverride: async () => {
+    if (!hasRoll()) return;
+    const rotation = Number($('#ovr-rotation').value), mirror = $('#ovr-mirror').checked, negative = $('#ovr-negative').checked;
+    if (ovrTarget() === 'sel') {
+      if (!view.selected.size) { status(t('Select frames first')); return; }
+      frameCommand('frames.setOverride', { rotation, flipH: mirror, negative });
+      return;
+    }
+    $('#proc-rotation').value = rotation;
+    $('#proc-mirror').checked = mirror;
+    $('#proc-negative').checked = negative;
+    sendProcess();
+    const own = view.frames.filter((f) => f.hasOverride).length;
+    if (own && confirm(tn(own, '{n} frame has its own orientation. Should it follow this too?', '{n} frames have their own orientation. Should they follow this too?'))) {
+      const r = await run('frames.clearOrientationAll');
+      applyFrames(r.frames);
+    }
+    status(t('Orientation applied to all frames'));
+  },
+  clearOverrides: () => {
+    if (ovrTarget() === 'all') return commands.orientAll();
+    if (!view.selected.size) { status(t('Select frames first')); return; }
+    return frameCommand('frames.clearOverrides');
+  },
   orientAll: async () => {
     const n = view.frames.filter((f) => f.hasOverride).length;
     if (!n || !confirm(tn(n, '{n} frame has its own orientation. Let it follow the global orientation?', '{n} frames have their own orientation. Let them follow the global orientation?'))) return;
@@ -1740,6 +1786,7 @@ on('orientation.changed', (o) => {
   $('#proc-rotation').value = o.rotation;
   $('#proc-mirror').checked = o.mirror;
   $('#proc-negative').checked = o.negative;
+  if (ovrTarget() === 'all') { $('#ovr-rotation').value = o.rotation; $('#ovr-mirror').checked = o.mirror; $('#ovr-negative').checked = o.negative; }
   if (state.session) state.session.process = { ...state.session.process, rotation: o.rotation, mirror: o.mirror, negative: o.negative };
   state.imageVersion = o.imageVersion;
 });

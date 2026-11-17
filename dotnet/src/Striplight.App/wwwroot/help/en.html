@@ -115,7 +115,7 @@
     <li><b>Join close</b>: selected fragments closer than the <b>join gap</b> are joined into one frame. <b>Show reach</b> draws an orange band after each selected frame showing how far the join reaches.</li>
     <li><b>Expand selected</b>: grows the selected frames by the given pixels on each side as seen on screen (left, right, top, bottom). Negative values shrink.</li>
     <li><b>Trim</b>: switch on <b>Show trim lines</b>, set or drag the yellow lines at the top and bottom of the strips, then <b>Apply trim to all frames</b>: every frame reaching into the yellow bands is clipped to them.</li>
-    <li><b>Per-frame orientation</b>: give the selected frames their own rotation, mirror or negative (they get the orange "own settings" colour). <b>Clear</b> returns them to the global orientation.</li>
+    <li><b>Frame orientation</b>: choose <b>All frames</b> or <b>Selected frames</b>, then rotation, mirror and negative, and press <b>Apply</b>. <b>All frames</b> sets the global orientation (the same as Adjust → Orientation); if some frames have their own orientation, Striplight asks whether they should follow too. <b>Selected frames</b> gives the selection its own orientation (the orange "own settings" colour). <b>Clear</b> returns frames to the global orientation.</li>
   </ul>
 </section>
 
@@ -180,7 +180,7 @@
     <li><b>Use global tone</b> puts the selected frames back on the global tone.</li>
   </ul>
   <h3>Sharpen and orientation</h3>
-  <p><b>Sharpen</b> (mode and amount) applies to the preview and export of all frames. <b>Orientation</b> (rotation, mirror, negative) applies to all frames except those with their own orientation (set with R / M / N in the preview window or Frames → Per-frame orientation). It shows in the preview window and the export; the strips stay as scanned. If some frames have their own orientation, the panel says how many, and <b>All frames follow this</b> removes those per-frame orientations (per-frame tone stays).</p>
+  <p><b>Sharpen</b> (mode and amount) applies to the preview and export of all frames. <b>Orientation</b> (rotation, mirror, negative) applies to all frames except those with their own orientation (set with R / M / N in the preview window or Frames → Frame orientation with Selected frames). It shows in the preview window and the export; the strips stay as scanned. If some frames have their own orientation, the panel says how many, and <b>All frames follow this</b> removes those per-frame orientations (per-frame tone stays).</p>
 </section>
 
 <section id="preview">

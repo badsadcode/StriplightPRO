@@ -223,7 +223,10 @@
         </div>
 
         <div class="section">
-          <h3>Per-frame orientation</h3>
+          <h3>Frame orientation</h3>
+          <div class="seg" id="ovr-target" role="radiogroup" aria-label="Apply orientation to">
+            <button data-v="all">All frames</button><button data-v="sel" id="ovr-target-sel">Selected frames</button>
+          </div>
           <div class="seg" id="ovr-rotation" role="radiogroup" aria-label="Rotation">
             <button data-v="0">0°</button><button data-v="90">90°</button><button data-v="180">180°</button><button data-v="270">270°</button>
           </div>
@@ -232,9 +235,10 @@
             <label class="switch"><input type="checkbox" id="ovr-negative"><span></span>Negative</label>
           </div>
           <div class="btn-grid">
-            <button class="btn" data-cmd="applyOverride" data-needs-sel>Apply to selected</button>
-            <button class="btn" data-cmd="clearOverrides" data-needs-sel>Clear on selected</button>
+            <button class="btn" data-cmd="applyOverride" data-needs-roll>Apply</button>
+            <button class="btn" data-cmd="clearOverrides" data-needs-roll>Clear</button>
           </div>
+          <p class="hint" id="ovr-hint"></p>
         </div>
 
         <div class="frame-card" id="frame-info" hidden></div>
